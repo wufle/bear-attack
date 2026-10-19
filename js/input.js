@@ -8,7 +8,7 @@
 //   Right click / G growl (levels that have it)
 //   Q               throw a fish (like dropping an item)
 //   C               put the disguise on / take it off
-//   1-9             pick a level you've reached (on the level card)
+//   1-9, 0          pick a level you've reached (on the level card; 0 is level 10)
 //   Esc             pause
 //   M               sound on/off
 //
@@ -104,8 +104,9 @@ export class Input {
       this.events.push({ type: "fish" }); // Q drops an item in Minecraft
     } else if (e.code === "KeyC") {
       this.events.push({ type: "costume" });
-    } else if (/^Digit[1-9]$/.test(e.code)) {
-      this.events.push({ type: "pick", index: Number(e.code.slice(5)) - 1 });
+    } else if (/^Digit[0-9]$/.test(e.code)) {
+      const digit = Number(e.code.slice(5));
+      this.events.push({ type: "pick", index: digit === 0 ? 9 : digit - 1 }); // 0 = level 10
     } else if (e.code === "KeyM") {
       this.events.push({ type: "mute" });
     } else if (e.code === "KeyR" && !e.ctrlKey && !e.metaKey) {

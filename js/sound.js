@@ -19,8 +19,11 @@ const GROUPS = {
   bark: 4, sniff: 2, whine: 2, dog_eat: 1,
   throw: 1, flop: 2, splash: 2, reel: 1, cloth: 2,
   radio: 3, click: 2, owl: 3, fanfare: 1, clink: 2, shovel: 3, sizzle: 1, snow_step: 4,
+  squeak: 2, cheer: 1, shoot: 3, darthit: 2, ouch: 2, snore: 2, trap: 2, whistle: 1, siren: 1, bugle: 1, sarge: 3,
 };
-const LOOPS = ["amb_day", "amb_crickets", "amb_campfire", "amb_lake", "amb_kids", "amb_winter"];
+const LOOPS = [
+  "amb_day", "amb_crickets", "amb_campfire", "amb_lake", "amb_kids", "amb_winter", "amb_organ", "amb_crowd", "amb_march",
+];
 
 // Which clips each kind of voice line uses.
 const VOICES = {
@@ -57,6 +60,29 @@ const VOICES = {
     huh: ["man_hmm", "man_huh"],
     rustle: ["man_hmm"],
     calm: ["man_hm"],
+    scream: ["man_scream"],
+  },
+  soldier: {
+    idle: ["man_hm", "man_whistle"],
+    huh: ["man_huh", "man_hmm"],
+    rustle: ["man_hmm"],
+    calm: ["man_hm"],
+    fight: ["man_huh"],
+    scream: ["man_huh"],
+  },
+  sergeant: {
+    idle: ["sarge", "whistle"],
+    huh: ["sarge"],
+    rustle: ["man_hmm"],
+    calm: ["man_hm"],
+    fight: ["whistle"],
+    scream: ["whistle"],
+  },
+  general: {
+    idle: ["snore"],
+    huh: ["man_huh"],
+    rustle: ["man_hmm"],
+    calm: ["snore"],
     scream: ["man_scream"],
   },
   dog: {
@@ -240,6 +266,7 @@ export class SoundDirector {
   update(level) {
     if (level !== this.level) {
       this.level = level;
+      if (level.ending) this.sound.play("bugle", { vol: 0.5, rate: 1 }); // the army camp wakes to a bugle call
       this.people = new Map();
       this.brunoState = level.bruno.state;
       this.lastPos = level.bruno.pos;
@@ -257,6 +284,25 @@ export class SoundDirector {
       else if (ev.type === "flop") s.play("flop", { vol: 0.8, pan: at });
       else if (ev.type === "splash") s.play("splash", { vol: 0.9, pan: at });
       else if (ev.type === "costume" && ev.costume === "queen") s.play("fanfare", { vol: 0.7, pan, rate: 1 });
+      else if (ev.type === "costume" && ev.costume === "mascot") s.play("squeak", { vol: 0.8, pan });
+      else if (ev.type === "shoot") s.play("shoot", { vol: 0.9, pan: at });
+      else if (ev.type === "hit") {
+        s.play("darthit", { vol: 0.9, pan });
+        s.play("ouch", { vol: 0.8, pan, rate: rand(0.6, 0.7), delay: 0.05 });
+      } else if (ev.type === "asleep") {
+        s.play("darthit", { vol: 0.9, pan });
+        s.play("snore", { vol: 0.9, pan, rate: 0.85, delay: 0.5 });
+      } else if (ev.type === "thunk") s.play("darthit", { vol: 0.5, pan: at });
+      else if (ev.type === "trap") {
+        s.play("trap", { vol: 1, pan: at });
+        s.play("ouch", { vol: 0.8, pan: at, rate: rand(0.6, 0.7), delay: 0.15 });
+      } else if (ev.type === "honey") s.play("lick", { vol: 0.8, pan, rate: 1.4 });
+      else if (ev.type === "mustache-off") s.play("cloth", { vol: 0.8, pan });
+      else if (ev.type === "cheer") s.play("cheer", { vol: 0.8, pan, rate: 1 });
+      else if (ev.type === "alarm") {
+        s.play("whistle", { vol: 0.9, pan: at, rate: 1 });
+        s.play("siren", { vol: 0.7, rate: 1, delay: 0.4 });
+      }
       else if (ev.type === "costume" || ev.type === "costume-off") s.play("cloth", { vol: 0.8, pan });
       else if (ev.type === "crown-off") s.play("clink", { vol: 0.9, pan });
       else if (ev.type === "melt") s.play("sizzle", { vol: 0.9, pan });

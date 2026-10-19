@@ -26,6 +26,7 @@ const CONE_COLORS = {
   [PersonState.WANDER]: "rgba(255,245,160,0.22)",
   [PersonState.INVESTIGATE]: "rgba(255,170,60,0.33)",
   [PersonState.FLEE]: "rgba(255,70,60,0.28)",
+  [PersonState.FIGHT]: "rgba(255,40,40,0.3)",
 };
 
 const font = (px) => `bold ${px}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
@@ -277,10 +278,10 @@ function drawTower(ctx, pos) {
   ctx.strokeRect(pos.x - 30, pos.y - 30, 60, 60);
 }
 
-function drawTruck(ctx, pos) {
+function drawTruck(ctx, pos, color = "#4f6b2e") {
   ctx.fillStyle = "#1e1e1e";
   for (const [dx, dy] of [[-30, -26], [26, -26], [-30, 20], [26, 20]]) ctx.fillRect(pos.x + dx, pos.y + dy, 10, 8);
-  ctx.fillStyle = "#4f6b2e";
+  ctx.fillStyle = color;
   ctx.beginPath();
   ctx.roundRect(pos.x - 44, pos.y - 24, 88, 48, 8);
   ctx.fill();
@@ -288,6 +289,204 @@ function drawTruck(ctx, pos) {
   ctx.fillRect(pos.x + 4, pos.y - 18, 14, 36);
   ctx.fillStyle = "#3b5222";
   ctx.fillRect(pos.x - 40, pos.y - 20, 40, 40);
+}
+
+function drawStall(ctx, pos, color) {
+  // striped awning seen from above
+  for (let i = 0; i < 6; i++) {
+    ctx.fillStyle = i % 2 ? "#ffffff" : color;
+    ctx.fillRect(pos.x - 60 + i * 20, pos.y - 40, 20, 80);
+  }
+  ctx.strokeStyle = "rgba(0,0,0,0.3)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(pos.x - 60, pos.y - 40, 120, 80);
+  ctx.fillStyle = "#8a6238";
+  ctx.fillRect(pos.x - 62, pos.y + 40, 124, 12); // counter
+}
+
+function drawStage(ctx, s) {
+  ctx.fillStyle = "#9a6a3a";
+  ctx.fillRect(s.x, s.y, s.w, s.h);
+  ctx.strokeStyle = "#6e4a26";
+  ctx.lineWidth = 2;
+  for (let x = s.x; x < s.x + s.w; x += 20) {
+    ctx.beginPath();
+    ctx.moveTo(x, s.y);
+    ctx.lineTo(x, s.y + s.h);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#c0392b";
+  ctx.fillRect(s.x - 6, s.y - 22, s.w + 12, 22);
+  ctx.font = font(15);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#ffe48a";
+  ctx.fillText("COSTUME CONTEST", s.x + s.w / 2, s.y - 11);
+}
+
+function drawBalloons(ctx, pos, t) {
+  const colors = ["#e74c3c", "#3498db", "#f1c40f", "#9b59b6", "#2ecc71"];
+  ctx.strokeStyle = "rgba(60,60,60,0.6)";
+  ctx.lineWidth = 1;
+  colors.forEach((c, i) => {
+    const a = (i / colors.length) * Math.PI * 2 + Math.sin(t + i) * 0.1;
+    const at = pos.add(Vec.fromAngle(a, 18));
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
+    ctx.lineTo(at.x, at.y);
+    ctx.stroke();
+    circle(ctx, at, 10, c);
+    circle(ctx, at.add(new Vec(-3, -3)), 3, "rgba(255,255,255,0.6)");
+  });
+}
+
+function drawBunting(ctx, points) {
+  const colors = ["#e74c3c", "#f1c40f", "#3498db", "#2ecc71"];
+  ctx.strokeStyle = "#555";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  points.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+  ctx.stroke();
+  let k = 0;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    for (let s = 0.05; s < 1; s += 0.09) {
+      const p = a.add(b.sub(a).scale(s));
+      ctx.fillStyle = colors[k++ % colors.length];
+      ctx.beginPath();
+      ctx.moveTo(p.x - 7, p.y);
+      ctx.lineTo(p.x + 7, p.y);
+      ctx.lineTo(p.x, p.y + 13);
+      ctx.fill();
+    }
+  }
+}
+
+function drawArmyTent(ctx, prop) {
+  const { pos, w, h } = prop;
+  ctx.fillStyle = "#3d4a1e";
+  ctx.fillRect(pos.x - w / 2 - 4, pos.y - h / 2 - 4, w + 8, h + 8);
+  ctx.fillStyle = "#56662a";
+  ctx.fillRect(pos.x - w / 2, pos.y - h / 2, w, h / 2);
+  ctx.fillStyle = "#4b5a24";
+  ctx.fillRect(pos.x - w / 2, pos.y, w, h / 2);
+  if (prop.star) {
+    ctx.fillStyle = "#f2c230";
+    ctx.beginPath();
+    for (let k = 0; k < 10; k++) {
+      const a = (k * Math.PI) / 5 - Math.PI / 2;
+      const r = k % 2 === 0 ? 16 : 7;
+      ctx.lineTo(pos.x + Math.cos(a) * r, pos.y + Math.sin(a) * r);
+    }
+    ctx.fill();
+  }
+}
+
+function drawCot(ctx, pos) {
+  ctx.fillStyle = "#6b7d3a";
+  ctx.fillRect(pos.x - 34, pos.y - 16, 68, 32);
+  ctx.strokeStyle = "#3d4a1e";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(pos.x - 34, pos.y - 16, 68, 32);
+}
+
+function drawSandbags(ctx, from, to) {
+  const n = Math.round(from.dist(to) / 26);
+  for (let i = 0; i <= n; i++) {
+    const p = from.add(to.sub(from).scale(i / n));
+    ctx.fillStyle = "#b8a070";
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y, 15, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#8a7448";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+}
+
+function drawTraps(ctx, traps) {
+  for (const { pos, sprung } of traps) {
+    ctx.strokeStyle = sprung ? "#5a5a5a" : "#7d7d7d";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, sprung ? 9 : 14, 0, Math.PI * 2);
+    ctx.stroke();
+    if (!sprung) {
+      ctx.lineWidth = 2;
+      for (let k = 0; k < 10; k++) {
+        const a = (k / 10) * Math.PI * 2;
+        const inner = pos.add(Vec.fromAngle(a, 8));
+        const outer = pos.add(Vec.fromAngle(a, 14));
+        ctx.beginPath();
+        ctx.moveTo(outer.x, outer.y);
+        ctx.lineTo(inner.x, inner.y);
+        ctx.stroke();
+      }
+      circle(ctx, pos, 3, "#9a9a9a");
+    }
+  }
+}
+
+function drawHoneyPot(ctx, pos, scale = 1) {
+  ctx.save();
+  ctx.translate(pos.x, pos.y);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "#c98a2a";
+  ctx.beginPath();
+  ctx.ellipse(0, 2, 12, 11, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#8a5a1a";
+  ctx.fillRect(-8, -12, 16, 6);
+  ctx.fillStyle = "#ffd75a";
+  ctx.fillRect(-9, -1, 18, 6);
+  ctx.restore();
+}
+
+function drawDarts(ctx, darts) {
+  for (const d of darts) {
+    const dir = d.vel.normalize();
+    const tail = d.pos.sub(dir.scale(14));
+    ctx.strokeStyle = "#cfcfcf";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(tail.x, tail.y);
+    ctx.lineTo(d.pos.x, d.pos.y);
+    ctx.stroke();
+    circle(ctx, tail, 3.5, "#ff5ab4"); // fluffy pink tail
+  }
+}
+
+// A red line from each armed person to Bruno while they aim: move!
+function drawAim(ctx, level) {
+  for (const p of level.people) {
+    if (p.state !== PersonState.FIGHT || p.aimTimer <= 0.05) continue;
+    const k = Math.min(1, p.aimTimer / p.armed.aim);
+    ctx.strokeStyle = `rgba(255,40,40,${0.25 + 0.6 * k})`;
+    ctx.lineWidth = 1 + 2 * k;
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath();
+    ctx.moveTo(p.pos.x, p.pos.y);
+    ctx.lineTo(level.bruno.pos.x, level.bruno.pos.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+function drawFx(ctx, fxs) {
+  for (const fx of fxs) {
+    ctx.globalAlpha = Math.max(0, 1 - fx.age / 1.6);
+    ctx.font = font(24);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(20,20,20,0.7)";
+    const y = fx.pos.y - 40 - fx.age * 25;
+    ctx.strokeText(fx.text, fx.pos.x, y);
+    ctx.fillStyle = "#ffe48a";
+    ctx.fillText(fx.text, fx.pos.x, y);
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawSnowmanProp(ctx, pos) {
@@ -323,7 +522,14 @@ function drawProps(ctx, props, t) {
     else if (prop.type === "cabin") drawCabin(ctx, prop);
     else if (prop.type === "lamp") drawLamp(ctx, prop.pos, t);
     else if (prop.type === "tower") drawTower(ctx, prop.pos);
-    else if (prop.type === "truck") drawTruck(ctx, prop.pos);
+    else if (prop.type === "truck") drawTruck(ctx, prop.pos, prop.color);
+    else if (prop.type === "stall") drawStall(ctx, prop.pos, prop.color);
+    else if (prop.type === "stage") drawStage(ctx, prop);
+    else if (prop.type === "balloons") drawBalloons(ctx, prop.pos, t);
+    else if (prop.type === "bunting") drawBunting(ctx, prop.points);
+    else if (prop.type === "armytent") drawArmyTent(ctx, prop);
+    else if (prop.type === "cot") drawCot(ctx, prop.pos);
+    else if (prop.type === "sandbags") drawSandbags(ctx, prop.from, prop.to);
     else if (prop.type === "snowman") drawSnowmanProp(ctx, prop.pos);
     else if (prop.type === "sledhill") drawSledHill(ctx, prop.pos);
     else if (prop.type === "tent") drawTent(ctx, prop);
@@ -499,8 +705,26 @@ function drawPerson(ctx, p, t) {
   const side = f.perp();
   circle(ctx, p.pos.add(side.scale(p.radius * 0.9)), p.radius * 0.35, SKIN);
   circle(ctx, p.pos.sub(side.scale(p.radius * 0.9)), p.radius * 0.35, SKIN);
+  if (p.armed) {
+    const muzzle = p.pos.add(f.scale(p.radius + 14)).add(side.scale(6));
+    ctx.strokeStyle = "#3a3a3a";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(p.pos.x + side.x * 6, p.pos.y + side.y * 6);
+    ctx.lineTo(muzzle.x, muzzle.y);
+    ctx.stroke();
+  }
   circle(ctx, p.pos, p.radius + 2, INK);
   circle(ctx, p.pos, p.radius, p.shirt);
+  if (p.asleep) {
+    circle(ctx, p.pos.add(f.scale(-10)), p.radius * 0.6, SKIN); // head on the pillow
+    ctx.font = font(18);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "bottom";
+    ctx.fillStyle = "#cfe3ff";
+    ctx.fillText("z z Z", p.pos.x + 12, p.pos.y - 14);
+    return;
+  }
   if (p.bowing) {
     // head down, so we see the top of it
     circle(ctx, p.pos.add(f.scale(7)), p.radius * 0.55, p.hair);
@@ -623,6 +847,18 @@ function drawBruno(ctx, bruno, t) {
     drawSnowmanBruno(ctx, bruno, t);
     return;
   }
+  if (bruno.state === BearState.ASLEEP) {
+    for (const s of [1, -1]) circle(ctx, pos.add(f.scale(8)).add(side.scale(s * 17)), 9, FUR_DARK);
+    circle(ctx, pos, Bruno.RADIUS, FUR);
+    circle(ctx, pos.add(f.scale(19)), 10, SNOUT);
+    circle(ctx, pos.add(f.scale(27)), 4, INK);
+    ctx.font = font(26);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.fillStyle = "#cfe3ff";
+    ctx.fillText("Z z z", pos.x + 10 + Math.sin(t * 2) * 4, pos.y - Bruno.RADIUS - 8);
+    return;
+  }
   for (const s of [1, -1]) circle(ctx, pos.add(f.scale(8)).add(side.scale(s * 17)), 9, FUR_DARK);
   circle(ctx, pos, Bruno.RADIUS, FUR);
   if (bruno.costume === "queen") {
@@ -648,10 +884,44 @@ function drawBruno(ctx, bruno, t) {
     ctx.stroke();
     circle(ctx, pos.sub(f.scale(10)), 9, "#d8d8d8"); // bun
   }
+  if (bruno.costume === "mascot") circle(ctx, pos.sub(f.scale(3)), Bruno.RADIUS + 2, "#f1c40f"); // jersey
+  if (bruno.costume === "soldier") circle(ctx, pos.sub(f.scale(2)), Bruno.RADIUS + 3, "#556b2f"); // uniform
   circle(ctx, pos.add(f.scale(19)), 10, SNOUT);
   circle(ctx, pos.add(f.scale(27)), 4, INK);
   for (const s of [1, -1]) circle(ctx, pos.add(f.scale(9)).add(side.scale(s * 8)), 3, INK);
   if (bruno.costume === "queen") drawCrown(ctx, pos.sub(f.scale(4)), 0, 1);
+  if (bruno.costume === "mascot") {
+    // Benny the Bear: a bear dressed as a bear, in a jersey, with big googly eyes
+    for (const s of [1, -1]) {
+      const eye = pos.add(f.scale(10)).add(side.scale(s * 8));
+      circle(ctx, eye, 6, "#ffffff");
+      circle(ctx, eye.add(f.scale(2)), 3, INK);
+    }
+    const tie = pos.sub(f.scale(4));
+    ctx.fillStyle = "#e74c3c";
+    for (const s of [1, -1]) {
+      ctx.beginPath();
+      ctx.moveTo(tie.x, tie.y);
+      const a = tie.add(side.scale(s * 9)).add(f.scale(5));
+      const b = tie.add(side.scale(s * 9)).sub(f.scale(5));
+      ctx.lineTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.fill();
+    }
+  }
+  if (bruno.costume === "soldier") {
+    // a fake mustache under the nose and a helmet
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+    const lip = pos.add(f.scale(22));
+    ctx.beginPath();
+    ctx.moveTo(lip.x + side.x * 9, lip.y + side.y * 9);
+    ctx.lineTo(lip.x - side.x * 9, lip.y - side.y * 9);
+    ctx.stroke();
+    circle(ctx, pos.sub(f.scale(4)), 15, "#4b5320");
+    circle(ctx, pos.sub(f.scale(6)), 9, "#5a6628");
+  }
   if (bruno.costume === "grandma") {
     ctx.strokeStyle = "#e6c34a";
     ctx.lineWidth = 2;
@@ -769,6 +1039,8 @@ export function drawScene(ctx, background, level, t) {
   drawProps(ctx, level.props, t);
   drawFootprints(ctx, level.footprints);
   drawTwigs(ctx, level.twigs);
+  drawTraps(ctx, level.traps);
+  for (const pot of level.honey) if (!pot.eaten) drawHoneyPot(ctx, pot.pos);
   drawSmell(ctx, level);
   drawCones(ctx, level.people, level.dark);
   for (const b of level.blockers) if (b.solid && !b.invisible) circle(ctx, b.pos, b.solid, TRUNK);
@@ -796,13 +1068,16 @@ export function drawScene(ctx, background, level, t) {
     ctx.globalAlpha = 1;
   }
   drawFish(ctx, level.fish.filter((f) => !f.landed), t);
+  drawAim(ctx, level);
+  drawDarts(ctx, level.darts);
+  drawFx(ctx, level.fx);
   for (const p of level.people) {
     drawMeter(ctx, p);
     drawSpeech(ctx, p);
   }
 }
 
-export const COSTUME_NAMES = { grandma: "Granny", queen: "the Queen", snowman: "a Snowman" };
+export const COSTUME_NAMES = { grandma: "Granny", queen: "the Queen", snowman: "a Snowman", mascot: "Benny", soldier: "a Soldier" };
 const STATUS = { [Gait.SNEAK]: "Sneaking (silent)", [Gait.WALK]: "Walking", [Gait.RUN]: "Sprinting (LOUD!)" };
 
 // `inset` keeps the HUD clear of the corner buttons: { left, right } in world units.
@@ -821,7 +1096,7 @@ export function drawHud(ctx, level, touch, inset) {
   ctx.font = font(30);
   const left = 18 + inset.left;
   shadowed(`Level ${level.number}: ${level.title}`, left, 14, "left");
-  shadowed(`Caught ${level.caught}/${level.targets.length}`, WIDTH - 18 - inset.right, 14, "right");
+  shadowed(`Caught ${level.caught}/${level.needed}`, WIDTH - 18 - inset.right, 14, "right");
 
   const bruno = level.bruno;
   let status = "Standing still";
@@ -832,6 +1107,14 @@ export function drawHud(ctx, level, touch, inset) {
   shadowed(status, left, 52, "left");
 
   if (level.wind) drawWind(ctx, level.wind);
+  if (level.armed) {
+    // health: honey pots under the status line
+    for (let i = 0; i < Bruno.MAX_HEALTH; i++) {
+      ctx.globalAlpha = i < bruno.health ? 1 : 0.25;
+      drawHoneyPot(ctx, new Vec(left + 14 + i * 32, 98), 0.95);
+    }
+    ctx.globalAlpha = 1;
+  }
 
   if (!touch) {
     ctx.textBaseline = "bottom";

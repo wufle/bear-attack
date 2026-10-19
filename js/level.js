@@ -13,6 +13,9 @@ const FISH_LIFE = 15; // seconds a fish lies there before it's forgotten
 const PRINT_STRIDE = 30; // Bruno leaves a paw print this often in the snow
 const PRINT_LIFE = 30; // seconds before snow covers a print
 const MELT_RADIUS = 170; // a snowman melts this close to a fire
+const TRAP_TIME = 3; // seconds stuck in a bear trap
+const TRAP_NOISE = { radius: 400, strength: 0.8 };
+const STAGE_TIME = 2; // seconds on stage in the mascot suit to win the costume contest
 const FISH_NOISE = { radius: 320, strength: 0, lines: ["…why is there a salmon here?", "Is that… a fish?", "Where did that fish come from?"] };
 
 export class Level {
@@ -20,7 +23,7 @@ export class Level {
     number, title, intro, tip = null, bruno, people, blockers,
     props = [], twigs = [], lights = [], dark = false, canGrowl = false, ground = "meadow",
     water = [], docks = [], wind = null, fish = 0, costumes = [], ambience = { amb_day: 0.45 },
-    snow = false, roads = [],
+    snow = false, roads = [], goal = null, armed = false, traps = [], honey = [], stage = null, ending = false,
   }) {
     this.number = number;
     this.title = title;
@@ -50,6 +53,17 @@ export class Level {
     this.printStride = 0;
     this.fires = props.filter((p) => p.type === "fire" && p.lit !== false).map((p) => p.pos);
     this.crownFx = null; // the Queen's crown tumbling off
+    this.goal = goal; // how many people to catch (default: all of them)
+    this.armed = armed; // people shoot back, so Bruno has health
+    this.darts = [];
+    this.traps = traps.map((pos) => ({ pos, sprung: false }));
+    this.honey = honey.map((pos) => ({ pos, eaten: false })); // each one heals a honey pot
+    this.stage = stage; // the festival's costume-contest stage: { x, y, w, h }
+    this.stageTime = 0;
+    this.contestWon = false;
+    this.alarm = false;
+    this.ending = ending; // the last level
+    this.fx = []; // floating messages: { text, pos, age }
     this.lostCostumes = new Set(); // there's only one crown: once it's off, it's gone
     this.bounds = { x: 0, y: 0, w: WIDTH, h: HEIGHT };
     this.events = []; // things that happened this frame, for sound effects
@@ -63,9 +77,13 @@ export class Level {
     return this.lights.some((light) => pos.dist(light.pos) < light.radius);
   }
 
-  // People Bruno has to catch (dogs don't count).
+  // People Bruno has to catch (dogs and soldiers don't count).
   get targets() {
-    return this.people.filter((p) => !p.animal);
+    return this.people.filter((p) => !p.animal && p.target);
+  }
+
+  get needed() {
+    return this.goal ?? this.targets.length;
   }
 
   inWater(pos) {
@@ -181,6 +199,7 @@ export class Level {
     }
     this.updateFish(dt);
     this.updateSnow(dt, before);
+    this.updateHazards(dt);
     if (this.crownFx && (this.crownFx.age += dt) > 1.2) this.crownFx = null;
 
     const stomping = bruno.state === BearState.POUNCING || (bruno.state === BearState.FREE && bruno.gait !== Gait.SNEAK);
@@ -200,10 +219,25 @@ export class Level {
       wind: this.wind,
       fish: this.fish,
       footprints: this.footprints,
+      darts: this.darts,
     };
     for (const person of this.people) {
       if (person.update(dt, bruno, this.blockers, this.bounds, env)) this.alertEarshot(person);
     }
+    for (const dart of this.darts) {
+      if (dart.fresh) {
+        dart.fresh = false;
+        this.events.push({ type: "shoot", pos: dart.pos });
+      }
+    }
+    if (bruno.dropped) {
+      this.lostCostumes.add(bruno.dropped);
+      this.fx.push({ text: "The mustache fell off!", pos: bruno.pos, age: 0 });
+      this.events.push({ type: "mustache-off", pos: bruno.pos });
+      bruno.dropped = null;
+    }
+    for (const fx of this.fx) fx.age += dt;
+    this.fx = this.fx.filter((fx) => fx.age < 1.6);
     this.noises = [];
     this.lure = null;
     if (this.growlFx) {
@@ -213,10 +247,67 @@ export class Level {
   }
 
   alertEarshot(spotter) {
+    // The drill sergeant's alarm reaches everyone. Heavy sleepers sleep through ordinary shouting.
+    if (spotter.alarm && !this.alarm) {
+      this.alarm = true;
+      this.events.push({ type: "alarm", pos: spotter.pos });
+    }
+    const radius = spotter.alarm ? Infinity : SHOUT_RADIUS;
     for (const other of this.people) {
-      if (other !== spotter && other.calmOrCurious && other.pos.dist(spotter.pos) < SHOUT_RADIUS) {
-        other.spot(choice(other.lines.alert));
+      if (other === spotter || !other.calmOrCurious || other.pos.dist(spotter.pos) > radius) continue;
+      if (other.asleep && !spotter.alarm) continue;
+      other.spot(other.armed ? undefined : choice(other.lines.alert), this.bruno.pos);
+    }
+  }
+
+  // Sleepy darts, bear traps, honey pots and the contest stage.
+  updateHazards(dt) {
+    const bruno = this.bruno;
+    for (const dart of this.darts) {
+      dart.pos = dart.pos.add(dart.vel.scale(dt));
+      dart.life -= dt;
+      dart.age = (dart.age ?? 0) + dt;
+      if (bruno.state !== BearState.ASLEEP && dart.pos.dist(bruno.pos) < Bruno.RADIUS + 4) {
+        dart.life = 0;
+        const out = bruno.hit();
+        this.events.push({ type: out ? "asleep" : "hit", pos: bruno.pos });
+      } else if (dart.age > 0.08 && this.blockers.some((b) => b.solid && dart.pos.dist(b.pos) < b.solid)) {
+        dart.life = 0; // thunk, into a tree
+        this.events.push({ type: "thunk", pos: dart.pos });
       }
+    }
+    this.darts = this.darts.filter((d) => d.life > 0);
+
+    if (bruno.state !== BearState.FREE) return;
+    for (const trap of this.traps) {
+      if (!trap.sprung && bruno.pos.dist(trap.pos) < 20) {
+        trap.sprung = true;
+        bruno.pos = trap.pos;
+        bruno.stunTimer = TRAP_TIME;
+        this.noises.push({ pos: trap.pos, ...TRAP_NOISE });
+        this.events.push({ type: "trap", pos: trap.pos });
+        this.fx.push({ text: "SNAP! Stuck!", pos: trap.pos, age: 0 });
+      }
+    }
+    for (const pot of this.honey) {
+      if (!pot.eaten && this.armed && bruno.health < Bruno.MAX_HEALTH && bruno.pos.dist(pot.pos) < 28) {
+        pot.eaten = true;
+        bruno.health += 1;
+        this.events.push({ type: "honey", pos: pot.pos });
+        this.fx.push({ text: "+1 honey!", pos: pot.pos, age: 0 });
+      }
+    }
+    const s = this.stage;
+    const onStage = s && bruno.pos.x > s.x && bruno.pos.x < s.x + s.w && bruno.pos.y > s.y && bruno.pos.y < s.y + s.h;
+    if (onStage && bruno.costume === "mascot" && !this.contestWon) {
+      this.stageTime += dt;
+      if (this.stageTime >= STAGE_TIME) {
+        this.contestWon = true;
+        this.events.push({ type: "cheer", pos: bruno.pos });
+        this.fx.push({ text: "🏆 Benny wins the costume contest!", pos: bruno.pos, age: 0 });
+      }
+    } else {
+      this.stageTime = 0;
     }
   }
 
@@ -225,8 +316,9 @@ export class Level {
   }
 
   get outcome() {
+    if (this.bruno.state === BearState.ASLEEP && !this.darts.length) return "asleep";
     if (this.targets.some((p) => p.state === PersonState.ESCAPED)) return "escaped";
-    if (this.caught === this.targets.length && this.bruno.state === BearState.FREE) return "won";
+    if (this.caught >= this.needed && this.bruno.state === BearState.FREE) return "won";
     return null;
   }
 }
@@ -610,4 +702,209 @@ function cabins() {
   });
 }
 
-export const LEVELS = [picnic, hiker, campfire, fishing, scouts, rangers, cabins];
+function festival() {
+  const visitor = (kidOrNot, start, points, look) =>
+    new Person(v(...start), route(start, ...points), {
+      voice: kidOrNot === "kid" ? "kid" : look.voice ?? "man",
+      walkSpeed: kidOrNot === "kid" ? 55 : 45,
+      viewDistance: 220,
+      pause: [2, 5],
+      shirt: look.shirt,
+      hair: look.hair,
+      idleLines: kidOrNot === "kid"
+        ? ["Cotton candy!", "Can we go on that?", "Wheee!", "Balloons!"]
+        : ["Lovely festival!", "Ooh, honey cakes.", "Who's winning the contest?"],
+    });
+  return new Level({
+    number: 8,
+    title: "Forest Festival",
+    intro: "Catch 3 people - don't start a stampede!",
+    tip: "NEW: Mascot suit unlocked!",
+    bruno: new Bruno(v(40, 690)),
+    people: [
+      visitor("kid", [250, 300], [[420, 290], [330, 380]], { shirt: "#f078a0", hair: "#e6be5a" }),
+      visitor("kid", [900, 300], [[1060, 330], [980, 420]], { shirt: "#3cb371", hair: "#5a3c22" }),
+      visitor("kid", [600, 560], [[720, 600], [820, 540]], { shirt: "#f1c40f", hair: "#3b2a1a" }),
+      visitor("kid", [180, 520], [[300, 600], [420, 520]], { shirt: "#9b59b6", hair: "#c0392b" }),
+      visitor("adult", [520, 260], [[700, 250], [760, 330]], { shirt: "#2e86ab", hair: "#3b2a1a" }),
+      visitor("adult", [1120, 470], [[1000, 560], [1150, 600]], { shirt: "#c0392b", hair: "#7a5a3a", voice: "woman" }),
+      visitor("adult", [380, 450], [[520, 470], [470, 560]], { shirt: "#e67e22", hair: "#d4a04c", voice: "woman" }),
+      visitor("adult", [860, 470], [[920, 560], [800, 600]], { shirt: "#556b2f", hair: "#3b2a1a" }),
+      visitor("adult", [1150, 300], [[1220, 380], [1100, 400]], { shirt: "#8e44ad", hair: "#f0d080", voice: "woman" }),
+    ],
+    goal: 3,
+    fish: 2,
+    canGrowl: true,
+    costumes: ["mascot", "grandma", "queen"],
+    ambience: { amb_organ: 0.3, amb_crowd: 0.35, amb_day: 0.15 },
+    stage: { x: 560, y: 380, w: 170, h: 100 },
+    props: [
+      { type: "bunting", points: [v(150, 120), v(640, 200), v(1130, 120)] },
+      { type: "stall", pos: v(240, 170), color: "#e74c3c" },
+      { type: "stall", pos: v(470, 140), color: "#3498db" },
+      { type: "stall", pos: v(820, 140), color: "#f1c40f" },
+      { type: "stall", pos: v(1060, 180), color: "#2ecc71" },
+      { type: "stage", x: 560, y: 380, w: 170, h: 100 },
+      { type: "balloons", pos: v(330, 220) },
+      { type: "balloons", pos: v(950, 220) },
+      { type: "balloons", pos: v(760, 520) },
+    ],
+    blockers: [
+      wall(240, 170, 48), wall(470, 140, 48), wall(820, 140, 48), wall(1060, 180, 48),
+      bush(60, 330), bush(70, 520, 44), bush(1230, 520, 44), bush(1220, 680, 42), bush(640, 690, 44),
+      bush(930, 690, 42), bush(330, 690, 44), bush(40, 90, 42), bush(1240, 90, 42), bush(640, 40, 40),
+      tree(140, 30, 56), tree(1150, 30, 56), tree(1250, 300, 50), tree(20, 420, 50), tree(480, 700, 46), tree(800, 700, 46),
+    ],
+  });
+}
+
+function lodge() {
+  const hunter = (start, points, extra) =>
+    new Person(v(...start), route(start, ...points), {
+      voice: "man",
+      walkSpeed: 50,
+      viewDistance: 280,
+      armed: { range: 380, aim: 0.9, reload: 1.6 },
+      shirt: "#5b6b2e",
+      hair: "#e67e22", // blaze-orange cap
+      idleLines: ["Quiet woods today.", "Any bears around here?", "*yawn*"],
+      ...extra,
+    });
+  return new Level({
+    number: 9,
+    title: "Hunting Lodge",
+    intro: "Dodge the red aim lines!",
+    tip: "NEW: Hunters fight back! Watch for bear traps.",
+    bruno: new Bruno(v(60, 690)),
+    people: [
+      hunter([360, 250], [], { pause: [30, 40], lookRange: 2.6, turnSpeed: 0.8, viewDistance: 330 }), // in the deer stand
+      hunter([700, 560], [[1000, 600], [1150, 420], [760, 420], [520, 480]], { pause: [1.5, 3], lookRange: 1.4 }),
+      new Person(v(980, 330), route([980, 330], [1180, 220], [980, 330]), {
+        voice: "man",
+        pauses: { 0: [6, 9], 1: [3, 4] },
+        shirt: "#c0392b",
+        hair: "#888888",
+        idleLines: ["Stew's almost ready!", "More firewood…", "Lovely day."],
+      }),
+    ],
+    armed: true,
+    fish: 2,
+    canGrowl: true,
+    costumes: ["grandma", "queen"],
+    ground: "forest",
+    ambience: { amb_day: 0.4 },
+    traps: [v(250, 560), v(430, 420), v(560, 300), v(640, 520), v(880, 470), v(1080, 520), v(200, 330), v(820, 650)],
+    honey: [v(470, 400), v(860, 680), v(150, 180)],
+    props: [
+      { type: "cabin", pos: v(980, 210), w: 240, h: 150 },
+      { type: "tower", pos: v(360, 250) },
+      { type: "woodpile", pos: v(1190, 250) },
+      { type: "trail", points: [v(0, 520), v(300, 470), v(520, 480), v(760, 420), v(980, 330)] },
+    ],
+    blockers: [
+      wall(910, 210, 75), wall(1050, 210, 75),
+      bush(180, 600), bush(340, 520, 44), bush(470, 640), bush(620, 380, 44), bush(700, 660, 44), bush(900, 560, 44),
+      bush(1100, 640, 44), bush(1220, 520, 42), bush(560, 200, 44), bush(200, 420, 42), bush(760, 270, 40), bush(120, 80, 42),
+      tree(60, 300, 60), tree(260, 120, 60), tree(480, 560, 52), tree(780, 560, 52), tree(1230, 360, 56), tree(660, 120, 60),
+      tree(1000, 470, 50),
+    ],
+  });
+}
+
+function armyCamp() {
+  const soldier = (start, points, extra) =>
+    new Person(v(...start), route(start, ...points), {
+      voice: "soldier",
+      soldier: true,
+      target: false,
+      walkSpeed: 55,
+      fleeSpeed: 250,
+      nightVision: 95,
+      armed: { range: 400, aim: 0.8, reload: 1.4 },
+      shirt: "#4b5320",
+      hair: "#3d4a1e", // helmet
+      lines: {
+        spot: ["Intruder!"],
+        alert: ["Intruder!"],
+        bow: ["*salutes* Your Majesty!", "Ten-hut! The Queen!"],
+        huh: ["Who goes there?", "Halt! Who's there?", "Huh?"],
+        calm: ["All clear.", "Just the wind."],
+      },
+      idleLines: ["Hup, two, three, four!", "Quiet night.", "*yawn*"],
+      ...extra,
+    });
+  const towerA = soldier([200, 150], [], { flashlight: { range: 480, angle: 22 }, nightVision: 70, pause: [30, 40], lookRange: 2.8, turnSpeed: 0.6 });
+  const towerB = soldier([1080, 150], [], { flashlight: { range: 480, angle: 22 }, nightVision: 70, pause: [30, 40], lookRange: 2.8, turnSpeed: 0.6 });
+  towerA.angle = 0.8;
+  towerB.angle = Math.PI - 0.8;
+  const patrolA = soldier([300, 560], [[620, 640], [900, 560], [620, 480]], { flashlight: { range: 290, angle: 38 }, pause: [1, 2] });
+  const patrolB = soldier([1100, 420], [[1180, 640], [900, 680], [1000, 420]], { flashlight: { range: 290, angle: 38 }, pause: [1, 2] });
+  const sergeant = soldier([640, 420], [[480, 330], [640, 420], [800, 330]], {
+    voice: "sergeant",
+    alarm: true,
+    notFooled: ["soldier", "grandma"],
+    flashlight: { range: 300, angle: 40 },
+    pause: [2, 3],
+    shirt: "#6b4e2a",
+    lines: {
+      spot: ["SOUND THE ALARM!"],
+      alert: ["SOUND THE ALARM!"],
+      bow: ["*salutes* Your Majesty!"],
+      huh: ["WHO GOES THERE?!", "Private?!"],
+      notGranny: ["Ma'am, this is a MILITARY camp!"],
+      calm: ["As you were."],
+    },
+    idleLines: ["LEFT! RIGHT! LEFT!", "Ten-HUT!", "Shape up, soldiers!"],
+  });
+  const general = new Person(v(640, 290), route([640, 290]), {
+    voice: "general",
+    asleep: true,
+    hearing: 0.6,
+    pause: [30, 40],
+    lookRange: 0,
+    shirt: "#2f3a1a",
+    hair: "#bbbbbb",
+    idleLines: ["Zzz…", "Zzz… *snort*… zzz…"],
+  });
+  general.angle = Math.PI / 2;
+  return new Level({
+    number: 10,
+    title: "The Army Camp",
+    intro: "Catch the sleeping General. Don't let the Sergeant spot you!",
+    tip: "NEW: Soldier uniform unlocked!",
+    bruno: new Bruno(v(60, 690)),
+    people: [general, towerA, towerB, patrolA, patrolB, sergeant],
+    goal: 1,
+    armed: true,
+    dark: true,
+    ending: true,
+    fish: 2,
+    canGrowl: true,
+    costumes: ["soldier", "grandma", "queen"],
+    ground: "night",
+    ambience: { amb_crickets: 0.25, amb_march: 0.12 },
+    lights: [{ pos: v(640, 250), radius: 110 }, { pos: v(640, 700), radius: 120 }],
+    honey: [v(120, 420), v(1180, 300)],
+    props: [
+      { type: "armytent", pos: v(640, 190), w: 190, h: 120, star: true },
+      { type: "cot", pos: v(640, 290) },
+      { type: "lamp", pos: v(700, 270) },
+      { type: "armytent", pos: v(380, 420), w: 140, h: 90 },
+      { type: "armytent", pos: v(900, 420), w: 140, h: 90 },
+      { type: "tower", pos: v(200, 150) },
+      { type: "tower", pos: v(1080, 150) },
+      { type: "truck", pos: v(1150, 560), color: "#4b5320" },
+      { type: "sandbags", from: v(470, 560), to: v(810, 560) },
+      { type: "flagpole", pos: v(640, 640) },
+    ],
+    blockers: [
+      wall(580, 185, 62), wall(700, 185, 62), wall(345, 420, 50), wall(415, 420, 50), wall(865, 420, 50), wall(935, 420, 50),
+      wall(1150, 560, 44), wall(500, 560, 26), wall(560, 560, 26), wall(620, 560, 26), wall(680, 560, 26), wall(740, 560, 26), wall(790, 560, 26),
+      bush(140, 560), bush(260, 680, 44), bush(440, 650, 44), bush(860, 660, 44), bush(1230, 680, 42), bush(40, 300, 42),
+      bush(460, 250, 44), bush(820, 250, 44), bush(1240, 420, 42), bush(320, 300, 42), bush(960, 300, 42),
+      tree(30, 60, 56), tree(1250, 60, 56), tree(420, 60, 50), tree(860, 60, 50),
+    ],
+  });
+}
+
+export const LEVELS = [picnic, hiker, campfire, fishing, scouts, rangers, cabins, festival, lodge, armyCamp];

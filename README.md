@@ -21,8 +21,14 @@ for the full game plan.
    Granny won't work here, but everyone bows to the Queen.
 7. **Snowy Cabins:** Bruno leaves paw prints in the snow that people follow.
    Disguise yourself as a snowman, but not near the fire!
+8. **Forest Festival:** a crowd and a costume contest. Wear the Benny the Bear
+   mascot suit and catch 3 people without anyone seeing.
+9. **Hunting Lodge:** hunters shoot sleepy darts (dodge the red aim lines; 3
+   hits and Bruno naps). Watch for bear traps; honey pots heal.
+10. **The Army Camp:** catch the sleeping General. Soldiers are fooled by the
+    uniform from far away, but if the Sergeant spots you he sounds the alarm.
 
-Your progress is saved in the browser. On the level card, press 1-7 or use ◀ ▶ to
+Your progress is saved in the browser. On the level card, press 1-9 and 0 (for 10) or use ◀ ▶ to
 replay any level you've reached.
 
 Sounds are real recordings from [Freesound](https://freesound.org), all CC0
@@ -43,7 +49,7 @@ Modelled on Minecraft.
 | Pounce | Left click (toward cursor) or Space | Pounce button, or tap the right side (toward the tap) |
 | Growl (level 3+) | Right click or G | Growl button |
 | Throw a fish (level 4+) | Q (like dropping an item) | Fish button |
-| Disguises (level 5+): Granny, Queen, Snowman | C (cycles through them) | Disguise button |
+| Disguises (level 5+): Granny, Queen, Snowman, Benny, Soldier | C (cycles through them) | Disguise button |
 | Pause | Esc | ❚❚ button |
 | Restart level | R | |
 | Sound on/off | M | 🔊 button |

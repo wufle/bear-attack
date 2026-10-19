@@ -66,11 +66,18 @@ function pushOut(pos, radius, blockers, bounds) {
 const inBounds = (pos, b) => pos.x >= b.x && pos.y >= b.y && pos.x < b.x + b.w && pos.y < b.y + b.h;
 
 export const Gait = { SNEAK: "sneak", WALK: "walk", RUN: "run" };
-export const BearState = { FREE: "free", POUNCING: "pouncing", TUSSLING: "tussling", LICKING: "licking" };
+export const BearState = {
+  FREE: "free",
+  POUNCING: "pouncing",
+  TUSSLING: "tussling",
+  LICKING: "licking",
+  ASLEEP: "asleep", // too many sleepy darts
+};
 export const PersonState = {
   WANDER: "wander",
   INVESTIGATE: "investigate",
   FLEE: "flee",
+  FIGHT: "fight", // armed: stands their ground and shoots sleepy darts
   CAUGHT: "caught",
   EATEN: "eaten",
   ESCAPED: "escaped",
@@ -91,7 +98,8 @@ export class Bruno {
   static GROWL_COOLDOWN = 3;
   static HEELS_NOISE = 200; // the Queen's royal shoes clip-clop, even when sneaking
   // Disguises slow Bruno down (and none of them can sprint).
-  static COSTUME_SPEED = { grandma: 0.7, queen: 0.55, snowman: 0.45 };
+  static COSTUME_SPEED = { grandma: 0.7, queen: 0.55, snowman: 0.45, mascot: 0.8, soldier: 0.9 };
+  static MAX_HEALTH = 3; // honey pots, on levels where people shoot back
 
   constructor(pos) {
     this.pos = pos;
@@ -103,7 +111,11 @@ export class Bruno {
     this.cooldown = 0;
     this.growlCooldown = 0;
     this.victim = null;
-    this.costume = null; // "grandma" while disguised
+    this.costume = null; // "grandma", "queen", ... while disguised
+    this.health = Bruno.MAX_HEALTH;
+    this.stunTimer = 0; // briefly stuck: hit by a dart, or caught in a trap
+    this.dropped = null; // a disguise someone just saw through (the soldier's mustache)
+    this.velocity = new Vec(); // hunters aim a little ahead of a running bear
   }
 
   get canPounce() {
@@ -137,9 +149,24 @@ export class Bruno {
     return true;
   }
 
+  // A sleepy dart. Returns true if that one put him to sleep.
+  hit() {
+    if (this.state === BearState.ASLEEP) return false;
+    this.health -= 1;
+    this.stunTimer = Math.max(this.stunTimer, 0.5);
+    if (this.health > 0) return false;
+    this.state = BearState.ASLEEP;
+    if (this.victim) this.victim.state = PersonState.WANDER; // they wriggle free
+    this.victim = null;
+    this.costume = null;
+    return true;
+  }
+
   update(dt, move, gait, bounds, people, blockers) {
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.growlCooldown = Math.max(0, this.growlCooldown - dt);
+    this.stunTimer = Math.max(0, this.stunTimer - dt);
+    if (this.stunTimer > 0) move = new Vec();
 
     if (this.state === BearState.FREE) {
       // In a disguise Bruno can't sprint, and walks slowly.
@@ -150,6 +177,7 @@ export class Bruno {
         const speed = Bruno.SPEEDS[this.gait] * (Bruno.COSTUME_SPEED[this.costume] ?? 1);
         this.pos = this.pos.add(this.facing.scale(speed * dt));
       }
+      this.velocity = this.moving ? this.facing.scale(Bruno.SPEEDS[this.gait] * (Bruno.COSTUME_SPEED[this.costume] ?? 1)) : new Vec();
     } else if (this.state === BearState.POUNCING) {
       this.pos = this.pos.add(this.facing.scale((Bruno.POUNCE_DISTANCE / Bruno.POUNCE_TIME) * dt));
       const victim = people.find(
@@ -209,10 +237,21 @@ const LINES = {
   snowman: ["A snowman! Let's hug it!", "Ooh, a snowman!"], // kids run over to a snowman
   snowmanMoved: ["Did that snowman just MOVE?!", "Snowmen can't walk…"],
   tracks: ["Huh? Bear tracks!", "Are those… paw prints?", "Something big walked here…"],
+  mascot: ["It's Benny the Bear!!", "Benny! Benny!", "Hug, Benny!"], // kids run to the mascot
+  mascotHi: ["Hi Benny!", "Great costume!", "Ha! Love the suit!"],
+  salute: ["Evening, private!", "*salutes*", "As you were, soldier."],
+  mustache: ["That's a BEAR with a mustache!", "Your mustache fell off… BEAR!"],
+  fight: ["Freeze, bear!", "Hold still!", "Got you now!"],
+  lost: ["Where'd it go?", "Lost him…", "Keep your eyes open."],
+  gotHim: ["Got him!", "Sweet dreams, bear!"],
+  wake: ["Wha—? Who's there?", "Huh? I'm awake!"],
   heels: ["Who's that clip-clopping?", "Fancy shoes I hear…", "Click, clack… who's there?"],
 };
 const DOG_EAT_TIME = 6;
 const BOW_TIME = 2.5; // how long people bow to the Queen - each person only bows once
+const DART_SPEED = 520;
+const MUSTACHE_RANGE = 150; // soldiers see through the fake mustache closer than this
+const GIVE_UP_TIME = 7; // armed people stop hunting after losing Bruno this long
 const PRINT_FOLLOW = 170; // how far apart footprints can be and still be followed
 
 export class Person {
@@ -251,6 +290,16 @@ export class Person {
     this.hugCooldown = 0;
     this.tracking = false;
     this.lastPrintId = -1; // newest footprint they've already looked at
+    // Armed people fight back with sleepy darts: { range, aim (seconds to aim), reload }.
+    this.armed = opts.armed ?? null;
+    this.aimTimer = 0;
+    this.reload = 0;
+    this.lostTimer = 0;
+    this.lastSeen = null;
+    this.target = opts.target ?? true; // false: doesn't need catching (soldiers), and can't "escape"
+    this.asleep = opts.asleep ?? false; // can't see; only noise wakes them
+    this.soldier = opts.soldier ?? false; // fooled by the soldier uniform from a distance
+    this.alarm = opts.alarm ?? false; // spotting Bruno alerts the whole level (the drill sergeant)
 
     this.angle = 0;
     this.state = PersonState.WANDER;
@@ -269,7 +318,7 @@ export class Person {
   get facing() { return Vec.fromAngle(this.angle); }
 
   get catchable() {
-    return [PersonState.WANDER, PersonState.INVESTIGATE, PersonState.FLEE].includes(this.state);
+    return [PersonState.WANDER, PersonState.INVESTIGATE, PersonState.FLEE, PersonState.FIGHT].includes(this.state);
   }
 
   get calmOrCurious() {
@@ -283,11 +332,22 @@ export class Person {
     this.speechTimer = duration;
   }
 
-  spot(line = choice(this.lines.spot)) {
+  // `at` is where they think the bear is (armed people go and look there).
+  spot(line = undefined, at = null) {
     this.suspicion = 1;
-    this.state = PersonState.FLEE;
     this.lureTarget = null;
-    this.say(line, "scream", 3.0);
+    this.asleep = false;
+    if (this.armed) {
+      this.state = PersonState.FIGHT;
+      this.lastSeen = at ?? this.interest;
+      this.lostTimer = 0;
+      this.aimTimer = 0;
+      this.reload = 0.3;
+      this.say(line ?? choice(this.lines.fight), "fight", 2.5);
+    } else {
+      this.state = PersonState.FLEE;
+      this.say(line ?? choice(this.lines.spot), "scream", 3.0);
+    }
   }
 
   // How far this person can see Bruno right now: not far in the dark, unless he's
@@ -303,6 +363,7 @@ export class Person {
 
   // "clear" if Bruno is in plain view, "rustle" if the bush he's in is shaking, else null.
   canSee(bruno, blockers, env) {
+    if (this.asleep) return null;
     const to = bruno.pos.sub(this.pos);
     const dist = to.length;
     const off = dist > 1 ? Math.abs(wrapAngle(to.angle - this.angle)) : 0;
@@ -325,6 +386,7 @@ export class Person {
     this.speechTimer -= dt;
     if (!this.catchable) return false;
 
+    if (this.state === PersonState.FIGHT) return this.fight(dt, bruno, blockers, bounds, env);
     if (this.state === PersonState.FLEE) {
       let away = this.pos.sub(bruno.pos);
       if (away.length === 0) away = new Vec(1, 0);
@@ -358,17 +420,28 @@ export class Person {
     const fooled = reaction === "fooled";
     if (fooled) {
       this.suspicion -= dt * 0.3;
-      if (bruno.costume === "grandma" && !this.greeted && dist < 220) {
-        this.greeted = true;
-        this.say(choice(this.lines.granny), "calm");
-      } else if (bruno.costume === "snowman" && this.isKid && this.hugCooldown <= 0 && dist > 60) {
-        // Kids can't resist a snowman.
+      const greeting = { grandma: this.lines.granny, mascot: this.lines.mascotHi, soldier: this.lines.salute }[bruno.costume];
+      const huggable = bruno.costume === "snowman" || bruno.costume === "mascot";
+      if (huggable && this.isKid && this.hugCooldown <= 0 && dist > 60) {
+        // Kids can't resist a snowman, or Benny the Bear.
         this.hugCooldown = 10;
+        this.greeted = true;
         this.lureTarget = bruno.pos;
         this.tracking = false;
         this.state = PersonState.INVESTIGATE;
-        this.say(choice(this.lines.snowman), "idle");
+        this.say(choice(bruno.costume === "mascot" ? this.lines.mascot : this.lines.snowman), "idle");
+      } else if (greeting && !this.greeted && dist < 220) {
+        this.greeted = true;
+        this.say(choice(greeting), "calm");
       }
+    } else if (reaction === "mustache") {
+      // Close up, the fake mustache falls off.
+      bruno.costume = null;
+      bruno.dropped = "soldier";
+      this.suspicion = Math.max(this.suspicion, 0.8);
+      this.interest = bruno.pos;
+      this.say(choice(this.lines.mustache), "huh");
+      noticed = true;
     } else if (reaction === "moving-snowman") {
       this.suspicion += dt * 0.5;
       noticed = true;
@@ -461,6 +534,10 @@ export class Person {
       this.spot(bruno.costume && this.isKid ? choice(this.lines.notGranny) : undefined);
       return true;
     }
+    if (this.asleep && this.suspicion >= SUSPICIOUS_AT) {
+      this.asleep = false;
+      this.say(choice(this.lines.wake), "huh");
+    }
     if (this.state === PersonState.WANDER && this.suspicion >= SUSPICIOUS_AT) {
       this.state = PersonState.INVESTIGATE;
       if (this.speechTimer <= 0) this.say(choice(this.lines.huh), "huh");
@@ -506,7 +583,61 @@ export class Person {
     if (costume === "grandma") return this.isKid ? null : "fooled";
     if (costume === "queen") return this.bowed ? null : "bow";
     if (costume === "snowman") return bruno.moving ? "moving-snowman" : "fooled";
+    if (costume === "mascot") return "fooled"; // everyone loves Benny the Bear
+    if (costume === "soldier") {
+      if (!this.soldier) return null;
+      return this.pos.dist(bruno.pos) > MUSTACHE_RANGE ? "fooled" : "mustache";
+    }
     return null;
+  }
+
+  // Armed and alert: aim (shown as a red line), fire a sleepy dart, reload. If Bruno
+  // gets out of sight they go to where they last saw him, and give up after a while.
+  fight(dt, bruno, blockers, bounds, env) {
+    if (bruno.state === BearState.ASLEEP) {
+      if (this.speechTimer <= -1) this.say(choice(this.lines.gotHim), "calm", 3);
+      return false;
+    }
+    this.reload -= dt;
+    const to = bruno.pos.sub(this.pos);
+    const sight = this.canSee(bruno, blockers, env);
+    if (sight === "clear") {
+      this.lastSeen = bruno.pos;
+      this.lostTimer = 0;
+      this.turnToward(to.angle, dt * 2.5);
+      if (to.length < this.armed.range) {
+        this.aimTimer += dt;
+        if (this.aimTimer >= this.armed.aim && this.reload <= 0) {
+          // They guess how far ahead to aim, so a moving bear is sometimes missed, a still
+          // one never is - and swerving after the "pfft" is the surest dodge.
+          const lead = bruno.velocity.scale((to.length / DART_SPEED) * Math.random());
+          const dir = to.add(lead).normalize();
+          env.darts.push({ pos: this.pos.add(dir.scale(this.radius + 6)), vel: dir.scale(DART_SPEED), life: this.armed.range / DART_SPEED + 0.3, fresh: true });
+          this.aimTimer = 0;
+          this.reload = this.armed.reload;
+        }
+      } else {
+        this.aimTimer = 0;
+        this.pos = this.pos.add(to.normalize().scale(this.walkSpeed * 1.3 * dt));
+      }
+    } else {
+      this.aimTimer = 0;
+      this.lostTimer += dt;
+      const toLast = this.lastSeen ? this.lastSeen.sub(this.pos) : new Vec();
+      if (toLast.length > 30) {
+        this.turnToward(toLast.angle, dt);
+        this.pos = this.pos.add(toLast.normalize().scale(this.walkSpeed * 1.3 * dt));
+      } else {
+        this.turnToward(this.angle + 2, dt * 0.6); // look around
+      }
+      if (this.lostTimer > GIVE_UP_TIME) {
+        this.state = PersonState.INVESTIGATE;
+        this.suspicion = 0.5;
+        this.say(choice(this.lines.lost), "calm");
+      }
+    }
+    this.pos = pushOut(this.pos, this.radius, blockers, bounds);
+    return false;
   }
 
   // The freshest footprint they haven't followed yet that they can see.

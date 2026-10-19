@@ -71,7 +71,7 @@ function unlock(index) {
 
 let levelIndex = unlocked;
 let level = LEVELS[levelIndex]();
-let mode = "intro"; // intro | playing | paused | won | escaped
+let mode = "intro"; // intro | playing | paused | won | escaped | asleep
 let modeTime = 0;
 let t = 0;
 let last = performance.now();
@@ -140,16 +140,21 @@ function handleEvents() {
 function drawCards() {
   const tap = input.touchMode ? "Tap" : "Click or press Space";
   if (mode === "intro") {
-    const pick = unlocked > 0 ? (input.touchMode ? "  ·  ◀ ▶ change level" : `  ·  keys 1-${unlocked + 1} change level`) : "";
+    const keys = unlocked >= 9 ? "1-9, 0" : `1-${unlocked + 1}`;
+    const pick = unlocked > 0 ? (input.touchMode ? "  ·  ◀ ▶ change level" : `  ·  keys ${keys} change level`) : "";
     drawCard(ctx, `Level ${level.number}: ${level.title}`, level.intro, `${tap} to start${pick}`, level.tip);
   } else if (mode === "paused") {
     drawCard(ctx, "Paused", "Bruno is taking a little nap.", `${tap} to keep playing`);
+  } else if (mode === "won" && level.ending) {
+    drawCard(ctx, "THE END", "Bruno caught the General! He is now King of the Forest!", `${tap} to play again from Level 1`,
+      "🐻👑 You beat Bear Attack!");
   } else if (mode === "won") {
-    const more = levelIndex + 1 < LEVELS.length;
-    drawCard(ctx, "Mmm! Delicious.", "Bruno licks his lips. Level complete!",
-      more ? `${tap} for the next level` : `More levels coming soon! ${tap} to play again`);
+    const trophy = level.contestWon ? "🏆 And Benny won the costume contest!" : null;
+    drawCard(ctx, "Mmm! Delicious.", "Level complete!", `${tap} for the next level`, trophy);
   } else if (mode === "escaped") {
     drawCard(ctx, "They got away!", "Somebody spotted Bruno and ran off. Try again!", `${tap} to restart the level`);
+  } else if (mode === "asleep") {
+    drawCard(ctx, "Zzz…", "Too many sleepy darts! Bruno took a nap.", `${tap} to restart the level`);
   }
 }
 
