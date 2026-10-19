@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Bear Attack</title>
+  <meta name="description" content="Bruno the bear sneaks up on people in his territory.">
+  <meta name="theme-color" content="#1d2a1a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Bear Attack">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <button id="btn-fullscreen" class="btn small" aria-label="Fullscreen">⛶</button>
+  <div id="touch-ui">
+    <div id="stick"><div id="knob"></div></div>
+    <button id="btn-pause" class="btn small" aria-label="Pause">❚❚</button>
+    <button id="btn-sprint" class="btn">Sprint</button>
+    <button id="btn-sneak" class="btn">Sneak</button>
+    <button id="btn-pounce" class="btn big">Pounce</button>
+  </div>
+  <div id="rotate">
+    <div>🐻</div>
+    <p>Turn your phone sideways to play</p>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
