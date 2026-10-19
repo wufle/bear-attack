@@ -16,6 +16,24 @@ const MELT_RADIUS = 170; // a snowman melts this close to a fire
 const TRAP_TIME = 3; // seconds stuck in a bear trap
 const TRAP_NOISE = { radius: 400, strength: 0.8 };
 const STAGE_TIME = 2; // seconds on stage in the mascot suit to win the costume contest
+const DRESS_TIME = 1.5; // seconds to put a costume on - anyone who sees him changing knows it's a bear
+const PICKUP_RADIUS = 30;
+// What someone shouts if they catch Bruno getting changed.
+const CHANGING_LINES = {
+  grandma: "The bear is putting on a DRESS?!",
+  queen: "Is that bear putting on a CROWN?!",
+  snowman: "That bear is dressing up as a SNOWMAN!",
+  mascot: "A bear putting on a BEAR suit?!",
+  soldier: "A bear… putting on a UNIFORM?!",
+};
+// Where each costume is found: a washing line, a dressing-up trunk, ...
+export const COSTUME_ITEMS = {
+  grandma: "Granny's dress",
+  queen: "the Queen costume",
+  snowman: "a snowman kit",
+  mascot: "a Benny suit",
+  soldier: "a soldier uniform",
+};
 const FISH_NOISE = { radius: 320, strength: 0, lines: ["…why is there a salmon here?", "Is that… a fish?", "Where did that fish come from?"] };
 
 export class Level {
@@ -44,7 +62,11 @@ export class Level {
     this.fishMax = fish;
     this.fishLeft = fish;
     this.fish = []; // thrown fish: { from, pos, age, landed, eaten }
-    this.costumes = costumes;
+    // Costumes are found lying around the level (`{ type, pos }`), carried in Bruno's bag,
+    // and put on somewhere nobody can see. Each one is ruined once it comes off in a hurry.
+    this.pickups = costumes.map((c) => ({ ...c, taken: false }));
+    this.bag = []; // costume types he's carrying, not wearing
+    this.dressing = null; // { costume, time } while he's getting changed
     this.ambience = ambience; // background loops and their volumes
     this.snow = snow; // Bruno leaves footprints...
     this.roads = roads; // ...except on ploughed roads: [{ points, width }]
@@ -64,7 +86,6 @@ export class Level {
     this.alarm = false;
     this.ending = ending; // the last level
     this.fx = []; // floating messages: { text, pos, age }
-    this.lostCostumes = new Set(); // there's only one crown: once it's off, it's gone
     this.bounds = { x: 0, y: 0, w: WIDTH, h: HEIGHT };
     this.events = []; // things that happened this frame, for sound effects
     this.noises = [];
@@ -91,32 +112,90 @@ export class Level {
     return !onDock && this.water.some((w) => ((pos.x - w.cx) / w.rx) ** 2 + ((pos.y - w.cy) / w.ry) ** 2 < 1);
   }
 
+  get hasCostumes() {
+    return this.pickups.length > 0;
+  }
+
   pounce(aim) {
     const bruno = this.bruno;
     if (!bruno.canPounce) return;
+    this.dressing = null;
     if (bruno.costume === "queen") {
       this.loseCrown(); // pouncing knocks the crown off for good
     } else if (bruno.costume) {
-      bruno.costume = null; // the disguise flies off mid-pounce
+      bruno.costume = null; // the disguise rips to shreds mid-pounce
+      this.fx.push({ text: "Rrrip! Costume ruined!", pos: bruno.pos, age: 0 });
       this.events.push({ type: "costume-off", pos: bruno.pos });
     }
     bruno.pounce(aim);
   }
 
-  // C cycles: no disguise -> each disguise this level has -> no disguise.
+  // C cycles: no disguise -> each disguise in the bag -> no disguise. Taking one off is
+  // instant (it goes back in the bag); putting one on takes a moment, standing still.
   toggleCostume() {
     const bruno = this.bruno;
-    if (!this.costumes.length || bruno.state !== BearState.FREE) return;
-    const options = [null, ...this.costumes.filter((c) => !this.lostCostumes.has(c))];
-    bruno.costume = options[(options.indexOf(bruno.costume) + 1) % options.length];
-    this.events.push({ type: "costume", costume: bruno.costume, pos: bruno.pos });
+    if (bruno.state !== BearState.FREE) return;
+    const current = this.dressing?.costume ?? bruno.costume;
+    const options = [null, ...new Set([...this.bag, ...(bruno.costume ? [bruno.costume] : [])])];
+    const next = options[(options.indexOf(current) + 1) % options.length];
+    this.dressing = null;
+    if (bruno.costume) {
+      this.bag.push(bruno.costume);
+      bruno.costume = null;
+      this.events.push({ type: "costume-off", pos: bruno.pos });
+    }
+    if (next) {
+      this.dressing = { costume: next, time: 0 };
+      this.events.push({ type: "dressing", pos: bruno.pos });
+    }
   }
 
   loseCrown() {
     this.bruno.costume = null;
-    this.lostCostumes.add("queen");
     this.crownFx = { pos: this.bruno.pos, age: 0 };
     this.events.push({ type: "crown-off", pos: this.bruno.pos });
+  }
+
+  updatePickups() {
+    const bruno = this.bruno;
+    if (bruno.state !== BearState.FREE) return;
+    for (const item of this.pickups) {
+      if (item.taken || bruno.pos.dist(item.pos) > PICKUP_RADIUS + Bruno.RADIUS * 0.5) continue;
+      item.taken = true;
+      this.bag.push(item.type);
+      this.fx.push({ text: `Got ${COSTUME_ITEMS[item.type]}!`, pos: item.pos, age: 0 });
+      this.events.push({ type: "pickup", pos: item.pos });
+    }
+  }
+
+  // Getting changed: standing still for a moment. Anyone who sees it raises the alarm.
+  updateDressing(dt, env) {
+    const bruno = this.bruno;
+    if (!this.dressing) return;
+    if (bruno.state !== BearState.FREE) {
+      this.dressing = null;
+      return;
+    }
+    const watcher = this.people.find((p) => p.calmOrCurious && !p.bowing && p.canSee(bruno, this.blockers, env) === "clear");
+    if (watcher) {
+      this.fx.push({ text: "Caught getting changed!", pos: bruno.pos, age: 0 });
+      watcher.spot(watcher.animal ? undefined : CHANGING_LINES[this.dressing.costume], bruno.pos);
+      this.alertEarshot(watcher);
+      this.dressing = null;
+      return;
+    }
+    this.dressing.time += dt;
+    if (this.dressing.time >= DRESS_TIME) {
+      const costume = this.dressing.costume;
+      this.bag.splice(this.bag.indexOf(costume), 1);
+      bruno.costume = costume;
+      this.dressing = null;
+      this.events.push({ type: "costume", costume, pos: bruno.pos });
+    }
+  }
+
+  get dressProgress() {
+    return this.dressing ? this.dressing.time / DRESS_TIME : 0;
   }
 
   onRoad(pos) {
@@ -181,6 +260,7 @@ export class Level {
     this.t += dt;
     const bruno = this.bruno;
     const before = bruno.pos;
+    if (this.dressing && move.length > 0) this.dressing = null; // walked off half-dressed: try again later
     // Running in the Queen costume knocks the crown off.
     if (bruno.costume === "queen" && gait === Gait.RUN && move.length > 0 && bruno.state === BearState.FREE) {
       this.loseCrown();
@@ -188,6 +268,7 @@ export class Level {
     // A snowman doesn't last long next to a fire.
     if (bruno.costume === "snowman" && this.fires.some((f) => f.dist(bruno.pos) < MELT_RADIUS)) {
       bruno.costume = null;
+      this.fx.push({ text: "The snowman melted!", pos: bruno.pos, age: 0 });
       this.events.push({ type: "melt", pos: bruno.pos });
     }
     bruno.update(dt, move, gait, this.bounds, this.people, this.blockers);
@@ -200,6 +281,7 @@ export class Level {
     this.updateFish(dt);
     this.updateSnow(dt, before);
     this.updateHazards(dt);
+    this.updatePickups();
     if (this.crownFx && (this.crownFx.age += dt) > 1.2) this.crownFx = null;
 
     const stomping = bruno.state === BearState.POUNCING || (bruno.state === BearState.FREE && bruno.gait !== Gait.SNEAK);
@@ -221,6 +303,7 @@ export class Level {
       footprints: this.footprints,
       darts: this.darts,
     };
+    this.updateDressing(dt, env);
     for (const person of this.people) {
       if (person.update(dt, bruno, this.blockers, this.bounds, env)) this.alertEarshot(person);
     }
@@ -231,7 +314,6 @@ export class Level {
       }
     }
     if (bruno.dropped) {
-      this.lostCostumes.add(bruno.dropped);
       this.fx.push({ text: "The mustache fell off!", pos: bruno.pos, age: 0 });
       this.events.push({ type: "mustache-off", pos: bruno.pos });
       bruno.dropped = null;
@@ -539,8 +621,8 @@ function scouts() {
   return new Level({
     number: 5,
     title: "Scout Troop",
-    intro: "Kids aren't fooled by Granny.",
-    tip: "NEW: Granny disguise unlocked!",
+    intro: "Grab the dress, change where nobody can see. Kids aren't fooled!",
+    tip: "NEW: Granny's dress is on the washing line!",
     bruno: new Bruno(v(50, 690)),
     people: [
       kid([230, 170], [[320, 140], [300, 230]], { hair: "#e6be5a" }),
@@ -552,7 +634,7 @@ function scouts() {
     ],
     fish: 2,
     canGrowl: true,
-    costumes: ["grandma"],
+    costumes: [{ type: "grandma", pos: v(120, 390) }],
     ambience: { amb_day: 0.4, amb_kids: 0.18 },
     props: [
       { type: "tent", pos: v(120, 330), w: 100, h: 76 },
@@ -617,13 +699,13 @@ function rangers() {
     number: 6,
     title: "Ranger Station",
     intro: "Only one crown - don't run!",
-    tip: "NEW: Queen costume unlocked!",
+    tip: "NEW: Find the Queen costume!",
     bruno: new Bruno(v(60, 690)),
     people: [tower, patrol, desk],
     dark: true,
     canGrowl: true,
     fish: 2,
-    costumes: ["grandma", "queen"],
+    costumes: [{ type: "grandma", pos: v(240, 560) }, { type: "queen", pos: v(1060, 640) }],
     ground: "night",
     ambience: { amb_crickets: 0.3 },
     lights: [{ pos: v(900, 340), radius: 160 }],
@@ -650,7 +732,7 @@ function cabins() {
     number: 7,
     title: "Snowy Cabins",
     intro: "Watch your paw prints!",
-    tip: "NEW: Snowman costume unlocked!",
+    tip: "NEW: Find the Snowman kit!",
     bruno: new Bruno(v(40, 615)),
     people: [
       new Person(v(300, 560), route([300, 560], [300, 380]), {
@@ -675,7 +757,7 @@ function cabins() {
     ground: "snow",
     canGrowl: true,
     fish: 2,
-    costumes: ["grandma", "queen", "snowman"],
+    costumes: [{ type: "snowman", pos: v(190, 500) }, { type: "grandma", pos: v(1090, 340) }, { type: "queen", pos: v(160, 150) }],
     ambience: { amb_winter: 0.5, amb_day: 0.1 },
     roads: [
       { points: [v(0, 615), v(400, 600), v(800, 640), v(1280, 600)], width: 70 },
@@ -719,7 +801,7 @@ function festival() {
     number: 8,
     title: "Forest Festival",
     intro: "Catch 3 people - don't start a stampede!",
-    tip: "NEW: Mascot suit unlocked!",
+    tip: "NEW: Find the Mascot suits!",
     bruno: new Bruno(v(40, 690)),
     people: [
       visitor("kid", [250, 300], [[420, 290], [330, 380]], { shirt: "#f078a0", hair: "#e6be5a" }),
@@ -735,7 +817,10 @@ function festival() {
     goal: 3,
     fish: 2,
     canGrowl: true,
-    costumes: ["mascot", "grandma", "queen"],
+    costumes: [
+      { type: "mascot", pos: v(120, 420) }, { type: "mascot", pos: v(1200, 600) },
+      { type: "grandma", pos: v(640, 620) }, { type: "queen", pos: v(1215, 200) },
+    ],
     ambience: { amb_organ: 0.3, amb_crowd: 0.35, amb_day: 0.15 },
     stage: { x: 560, y: 380, w: 170, h: 100 },
     props: [
@@ -790,7 +875,7 @@ function lodge() {
     armed: true,
     fish: 2,
     canGrowl: true,
-    costumes: ["grandma", "queen"],
+    costumes: [{ type: "grandma", pos: v(1180, 600) }, { type: "queen", pos: v(100, 200) }],
     ground: "forest",
     ambience: { amb_day: 0.4 },
     traps: [v(250, 560), v(430, 420), v(560, 300), v(640, 520), v(880, 470), v(1080, 520), v(200, 330), v(820, 650)],
@@ -871,7 +956,7 @@ function armyCamp() {
     number: 10,
     title: "The Army Camp",
     intro: "Catch the sleeping General. Don't let the Sergeant spot you!",
-    tip: "NEW: Soldier uniform unlocked!",
+    tip: "NEW: Find the Soldier uniform!",
     bruno: new Bruno(v(60, 690)),
     people: [general, towerA, towerB, patrolA, patrolB, sergeant],
     goal: 1,
@@ -880,7 +965,7 @@ function armyCamp() {
     ending: true,
     fish: 2,
     canGrowl: true,
-    costumes: ["soldier", "grandma", "queen"],
+    costumes: [{ type: "soldier", pos: v(1000, 600) }, { type: "grandma", pos: v(60, 470) }, { type: "queen", pos: v(1215, 250) }],
     ground: "night",
     ambience: { amb_crickets: 0.25, amb_march: 0.12 },
     lights: [{ pos: v(640, 250), radius: 110 }, { pos: v(640, 700), radius: 120 }],

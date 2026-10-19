@@ -50,7 +50,12 @@ happens for a while.
   Bushes and trees also block line of sight, so he can hide *behind* them.
 - **Darkness** — at night people only see a short way, except where firelight
   or flashlights reach.
-- **Costumes** — each has a trick and a weakness:
+- **Costumes** — found, not given. Each level hides its costumes somewhere
+  (Granny's dress on a washing line, the Queen's crown in a dressing-up trunk,
+  a snowman kit in the snow, Benny suits backstage, a uniform on the army
+  laundry line). Bruno carries what he finds, and putting one on takes a
+  moment standing still: if anyone sees him changing, they raise the alarm. A
+  pounce rips the costume, so each one gets him one catch. Each costume has a trick and a weakness:
 
 | Costume | Trick | Weakness |
 |---|---|---|

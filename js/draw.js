@@ -489,6 +489,111 @@ function drawFx(ctx, fxs) {
   ctx.globalAlpha = 1;
 }
 
+// Costumes waiting to be stolen, with a little twinkle so they're easy to spot.
+function drawPickups(ctx, pickups, t) {
+  for (const item of pickups) {
+    if (item.taken) continue;
+    const { x, y } = item.pos;
+    if (item.type === "grandma" || item.type === "soldier") {
+      // a washing line between two poles, with the outfit pegged on it
+      ctx.strokeStyle = "#8a6a44";
+      ctx.lineWidth = 4;
+      for (const dx of [-30, 30]) {
+        ctx.beginPath();
+        ctx.moveTo(x + dx, y - 22);
+        ctx.lineTo(x + dx, y + 16);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = "#e8e2d0";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x - 30, y - 18);
+      ctx.quadraticCurveTo(x, y - 10, x + 30, y - 18);
+      ctx.stroke();
+      ctx.fillStyle = item.type === "grandma" ? "#b56bb5" : "#556b2f";
+      ctx.beginPath();
+      ctx.moveTo(x - 9, y - 14);
+      ctx.lineTo(x + 9, y - 14);
+      ctx.lineTo(x + 15, y + 12);
+      ctx.lineTo(x - 15, y + 12);
+      ctx.closePath();
+      ctx.fill();
+      if (item.type === "grandma") for (const [dx, dy] of [[-5, -6], [5, 0], [-6, 6], [7, 8]]) circle(ctx, new Vec(x + dx, y + dy), 2.2, "#ffd6f0");
+      else for (const dy of [-6, 0, 6]) circle(ctx, new Vec(x, y + dy), 1.6, "#d8c060");
+    } else if (item.type === "snowman") {
+      // a carrot, a scarf and a bucket hat in the snow
+      ctx.fillStyle = "#f08a24";
+      ctx.beginPath();
+      ctx.moveTo(x - 18, y - 8);
+      ctx.lineTo(x + 2, y - 13);
+      ctx.lineTo(x + 2, y - 3);
+      ctx.fill();
+      ctx.strokeStyle = "#d6203a";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(x - 16, y + 8);
+      ctx.quadraticCurveTo(x, y + 2, x + 16, y + 12);
+      ctx.stroke();
+      ctx.fillStyle = "#555";
+      ctx.fillRect(x + 6, y - 14, 14, 12);
+    } else {
+      // a dressing-up trunk, lid open
+      ctx.fillStyle = "#7a4a26";
+      ctx.fillRect(x - 22, y - 6, 44, 22);
+      ctx.fillStyle = "#5a3418";
+      ctx.fillRect(x - 22, y - 18, 44, 10);
+      ctx.fillStyle = "#d8b040";
+      ctx.fillRect(x - 3, y - 2, 6, 6);
+      if (item.type === "queen") drawCrown(ctx, new Vec(x, y - 20), 0, 1);
+      else {
+        circle(ctx, new Vec(x - 8, y - 14), 7, FUR); // Benny's big head peeking out
+        circle(ctx, new Vec(x + 8, y - 14), 7, "#f1c40f");
+      }
+    }
+  }
+}
+
+// Drawn over the darkness so costumes can be found at night too.
+function drawPickupSparkles(ctx, pickups, t) {
+  ctx.fillStyle = "#fff6b0";
+  ctx.font = font(18);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (const { pos, taken } of pickups) {
+    if (taken) continue;
+    const twinkle = 0.5 + 0.5 * Math.sin(t * 4 + pos.x);
+    ctx.globalAlpha = 0.4 + 0.6 * twinkle;
+    ctx.fillText("✦", pos.x + 26, pos.y - 26 - twinkle * 4);
+    ctx.fillText("✦", pos.x - 24, pos.y + 4 + twinkle * 3);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Getting changed: a spinning flurry of clothes and a progress ring.
+function drawDressing(ctx, level, t) {
+  if (!level.dressing) return;
+  const pos = level.bruno.pos;
+  const r = Bruno.RADIUS + 10;
+  ctx.strokeStyle = "rgba(0,0,0,0.35)";
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = "#ffe48a";
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, r, -Math.PI / 2, -Math.PI / 2 + level.dressProgress * Math.PI * 2);
+  ctx.stroke();
+  const colors = { grandma: "#b56bb5", queen: "#b3122e", snowman: "#ffffff", mascot: "#f1c40f", soldier: "#556b2f" };
+  for (let k = 0; k < 3; k++) {
+    circle(ctx, pos.add(Vec.fromAngle(t * 9 + (k * Math.PI * 2) / 3, r - 12)), 6, colors[level.dressing.costume]);
+  }
+  ctx.font = font(20);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+  ctx.fillStyle = TEXT;
+  ctx.fillText("Changing…", pos.x, pos.y - r - 6);
+}
+
 function drawSnowmanProp(ctx, pos) {
   circle(ctx, pos, 22, "#c9d6de");
   circle(ctx, pos, 20, "#ffffff");
@@ -1040,6 +1145,7 @@ export function drawScene(ctx, background, level, t) {
   drawFootprints(ctx, level.footprints);
   drawTwigs(ctx, level.twigs);
   drawTraps(ctx, level.traps);
+  drawPickups(ctx, level.pickups, t);
   for (const pot of level.honey) if (!pot.eaten) drawHoneyPot(ctx, pot.pos);
   drawSmell(ctx, level);
   drawCones(ctx, level.people, level.dark);
@@ -1053,8 +1159,10 @@ export function drawScene(ctx, background, level, t) {
   for (const b of level.blockers) if (b.hideable) drawBush(ctx, b, b === hidingIn, snowy);
   for (const b of level.blockers) if (!b.hideable && !b.invisible) drawCanopy(ctx, b, snowy);
   drawDarkness(ctx, level, t);
+  drawPickupSparkles(ctx, level.pickups, t);
   if (level.bruno.state === BearState.TUSSLING) drawTussle(ctx, level.bruno.pos, t);
   drawGrowl(ctx, level.growlFx);
+  drawDressing(ctx, level, t);
   if (level.crownFx) {
     const { pos, age } = level.crownFx;
     const fade = Math.max(0, 1 - age / 1.2);
@@ -1103,6 +1211,8 @@ export function drawHud(ctx, level, touch, inset) {
   if (bruno.hidingIn(level.blockers)) status = "Hiding in a bush";
   else if (bruno.moving) status = STATUS[bruno.gait];
   if (bruno.costume) status = `Disguised as ${COSTUME_NAMES[bruno.costume]} · ${status}`;
+  else if (level.dressing) status = `Changing into ${COSTUME_NAMES[level.dressing.costume]} - don't get seen!`;
+  else if (level.bag.length) status = `${status} · Press C to put on a disguise`;
   ctx.font = font(22);
   shadowed(status, left, 52, "left");
 
@@ -1156,9 +1266,10 @@ function drawHotbar(ctx, level) {
   const slots = [];
   if (level.canGrowl) slots.push({ key: "G", label: "Growl", on: false });
   if (level.fishMax) slots.push({ key: "Q", label: `Fish ×${level.fishLeft}`, on: false, empty: !level.fishLeft });
-  if (level.costumes.length) {
+  if (level.hasCostumes) {
     const costume = level.bruno.costume;
-    slots.push({ key: "C", label: costume ? COSTUME_NAMES[costume].replace(/^(the|a) /, "") : "Disguise", on: Boolean(costume) });
+    const empty = !costume && !level.bag.length && !level.dressing;
+    slots.push({ key: "C", label: costume ? COSTUME_NAMES[costume].replace(/^(the|a) /, "") : `Disguise ×${level.bag.length}`, on: Boolean(costume), empty });
   }
   if (!slots.length) return;
   const w = 118;

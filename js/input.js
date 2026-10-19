@@ -9,7 +9,7 @@
 //   Q               throw a fish (like dropping an item)
 //   C               put the disguise on / take it off
 //   1-9, 0          pick a level you've reached (on the level card; 0 is level 10)
-//   Esc             pause
+//   Esc             pause (or back to the main menu from a card)
 //   M               sound on/off
 //
 // Touch (like Minecraft Bedrock):
@@ -39,6 +39,10 @@ export class Input {
     this.stick = { id: null, origin: null, vec: new Vec() };
     this.sneakToggle = false;
     this.sprintToggle = false;
+    // Menus and cards: presses go to on-screen buttons (and Bruno's nose) instead of the joystick.
+    this.uiMode = false;
+    this.uiPointer = null;
+    this.pointer = null; // where the mouse or finger last was, in world coordinates
     this.stickEl = document.getElementById("stick");
     this.knobEl = document.getElementById("knob");
     this.setTouchMode(matchMedia("(pointer: coarse)").matches);
@@ -54,6 +58,7 @@ export class Input {
 
     this.bindButton("btn-pounce", () => this.events.push({ type: "pounce" }));
     this.bindButton("btn-pause", () => this.events.push({ type: "pause" }));
+    this.bindButton("btn-restart", () => this.events.push({ type: "restart" }));
     this.bindButton("btn-fullscreen", () => this.events.push({ type: "fullscreen" }));
     this.bindButton("btn-mute", () => this.events.push({ type: "mute" }));
     this.bindButton("btn-growl", () => this.events.push({ type: "growl" }));
@@ -116,6 +121,15 @@ export class Input {
 
   onPointerDown(e, canvas) {
     e.preventDefault();
+    if (this.uiMode) {
+      this.setTouchMode(e.pointerType !== "mouse");
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      this.pointer = this.toWorld(e.clientX, e.clientY);
+      this.uiPointer = e.pointerId;
+      canvas.setPointerCapture(e.pointerId);
+      this.events.push({ type: "press", at: this.pointer });
+      return;
+    }
     if (e.pointerType === "mouse") {
       this.setTouchMode(false);
       if (e.button === 0) this.events.push({ type: "pounce", at: this.toWorld(e.clientX, e.clientY) });
@@ -136,6 +150,8 @@ export class Input {
   }
 
   onPointerMove(e) {
+    if (e.pointerType === "mouse" || e.pointerId === this.uiPointer) this.pointer = this.toWorld(e.clientX, e.clientY);
+    if (e.pointerId === this.uiPointer) this.events.push({ type: "drag", at: this.pointer });
     if (e.pointerId !== this.stick.id) return;
     const delta = new Vec(e.clientX, e.clientY).sub(this.stick.origin);
     const amount = Math.min(delta.length, this.stickRadius) / this.stickRadius;
@@ -144,6 +160,10 @@ export class Input {
   }
 
   onPointerUp(e) {
+    if (e.pointerId === this.uiPointer) {
+      this.uiPointer = null;
+      this.events.push({ type: "release" });
+    }
     if (e.pointerId !== this.stick.id) return;
     this.stick = { id: null, origin: null, vec: new Vec() };
     this.stickEl.classList.remove("active");

@@ -71,9 +71,17 @@ canvas {
 body.touch #touch-ui {
   display: block;
 }
+/* Menus and cards use on-screen buttons drawn on the canvas instead. */
+body.touch.in-menu #touch-ui {
+  display: none;
+}
 
 #btn-pause {
   top: calc(env(safe-area-inset-top) + 12px);
+  left: calc(env(safe-area-inset-left) + 12px);
+}
+#btn-restart {
+  top: calc(env(safe-area-inset-top) + 68px);
   left: calc(env(safe-area-inset-left) + 12px);
 }
 #btn-pounce {
@@ -173,6 +181,7 @@ body.touch #touch-ui {
   .btn.big { width: 84px; height: 84px; font-size: 16px; }
   .btn.small { width: 42px; height: 42px; font-size: 16px; }
   #btn-mute { top: calc(env(safe-area-inset-top) + 60px); }
+  #btn-restart { top: calc(env(safe-area-inset-top) + 60px); }
   #btn-pounce { right: calc(env(safe-area-inset-right) + 18px); bottom: calc(env(safe-area-inset-bottom) + 18px); }
   #btn-sneak { right: calc(env(safe-area-inset-right) + 112px); bottom: calc(env(safe-area-inset-bottom) + 12px); }
   #btn-sprint { right: calc(env(safe-area-inset-right) + 32px); bottom: calc(env(safe-area-inset-bottom) + 112px); }

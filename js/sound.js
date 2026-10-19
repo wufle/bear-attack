@@ -303,7 +303,7 @@ export class SoundDirector {
         s.play("whistle", { vol: 0.9, pan: at, rate: 1 });
         s.play("siren", { vol: 0.7, rate: 1, delay: 0.4 });
       }
-      else if (ev.type === "costume" || ev.type === "costume-off") s.play("cloth", { vol: 0.8, pan });
+      else if (["costume", "costume-off", "pickup", "dressing"].includes(ev.type)) s.play("cloth", { vol: 0.8, pan });
       else if (ev.type === "crown-off") s.play("clink", { vol: 0.9, pan });
       else if (ev.type === "melt") s.play("sizzle", { vol: 0.9, pan });
     }
