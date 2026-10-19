@@ -51,6 +51,7 @@ const route = (...points) => points.map(([x, y]) => new Vec(x, y));
 function picnic() {
   const kid = new Person(new Vec(880, 330), route([880, 330], [1010, 250], [960, 450], [800, 410]), {
     idleLines: ["Ooh, a flower!", "La la la…", "Sandwich time!", "A butterfly!"],
+    voice: 460,
   });
   return new Level({
     number: 1,

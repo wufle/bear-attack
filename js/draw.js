@@ -278,7 +278,7 @@ export function drawHud(ctx, level, touch, inset) {
     ctx.textBaseline = "bottom";
     ctx.font = font(20);
     shadowed(
-      "WASD move · Shift sneak · Ctrl or double-tap W sprint · Click/Space pounce · Esc pause · R restart",
+      "WASD move · Shift sneak · Ctrl or double-tap W sprint · Click/Space pounce · Esc pause · R restart · M sound",
       18, HEIGHT - 12, "left",
     );
   }

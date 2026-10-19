@@ -56,6 +56,15 @@ canvas {
   right: calc(env(safe-area-inset-right) + 12px);
 }
 
+#btn-mute {
+  top: calc(env(safe-area-inset-top) + 68px);
+  right: calc(env(safe-area-inset-right) + 12px);
+}
+/* No fullscreen on iPhone: move the sound button up into the corner. */
+#btn-fullscreen[hidden] + #btn-mute {
+  top: calc(env(safe-area-inset-top) + 12px);
+}
+
 #touch-ui {
   display: none;
 }

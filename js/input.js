@@ -6,6 +6,7 @@
 //   Ctrl (hold) or double-tap a move key   sprint (stops when you stop moving)
 //   Left click      pounce toward the cursor (Space also pounces, like a jump)
 //   Esc             pause
+//   M               sound on/off
 //
 // Touch (like Minecraft Bedrock):
 //   Left side of the screen    joystick
@@ -50,6 +51,7 @@ export class Input {
     this.bindButton("btn-pounce", () => this.events.push({ type: "pounce" }));
     this.bindButton("btn-pause", () => this.events.push({ type: "pause" }));
     this.bindButton("btn-fullscreen", () => this.events.push({ type: "fullscreen" }));
+    this.bindButton("btn-mute", () => this.events.push({ type: "mute" }));
     this.bindButton("btn-sneak", () => {
       this.sneakToggle = !this.sneakToggle;
       if (this.sneakToggle) this.sprintToggle = false;
@@ -87,6 +89,8 @@ export class Input {
       this.events.push({ type: "confirm" });
     } else if (e.code === "Escape") {
       this.events.push({ type: "pause" });
+    } else if (e.code === "KeyM") {
+      this.events.push({ type: "mute" });
     } else if (e.code === "KeyR" && !e.ctrlKey && !e.metaKey) {
       this.events.push({ type: "restart" });
     }

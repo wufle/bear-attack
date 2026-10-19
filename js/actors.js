@@ -187,6 +187,7 @@ export class Person {
     this.idleLines = opts.idleLines ?? [];
     this.shirt = opts.shirt ?? "#f078a0";
     this.hair = opts.hair ?? "#e6be5a";
+    this.voice = opts.voice ?? 260; // babble pitch in Hz: kids high, grown-ups lower
 
     this.angle = 0;
     this.state = PersonState.WANDER;

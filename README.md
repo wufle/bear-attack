@@ -6,6 +6,9 @@ for the full game plan.
 
 **Play:** https://wufle.github.io/bear-attack/
 
+All sounds (footsteps, voices, birds and wind, the tussle) are synthesized live with
+Web Audio, so there are no audio files.
+
 Works in desktop browsers and on Android/iPhone (hold the phone sideways). On a
 phone, use *Add to Home Screen* to play fullscreen like an app.
 
@@ -21,6 +24,7 @@ Modelled on Minecraft.
 | Pounce | Left click (toward cursor) or Space | Pounce button, or tap the right side (toward the tap) |
 | Pause | Esc | ❚❚ button |
 | Restart level | R | |
+| Sound on/off | M | 🔊 button |
 
 ## Develop
 

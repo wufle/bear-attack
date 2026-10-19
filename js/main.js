@@ -4,6 +4,7 @@ import { Vec } from "./actors.js";
 import { drawCard, drawHud, drawScene, makeBackground } from "./draw.js";
 import { Input } from "./input.js";
 import { HEIGHT, LEVELS, WIDTH } from "./level.js";
+import { Sound, SoundDirector } from "./sound.js";
 
 const CARD_INPUT_DELAY = 0.6; // seconds before a card accepts a tap, so mashing pounce doesn't skip it
 
@@ -32,8 +33,18 @@ const buttons = {
   sneak: document.getElementById("btn-sneak"),
   sprint: document.getElementById("btn-sprint"),
   fullscreen: document.getElementById("btn-fullscreen"),
+  mute: document.getElementById("btn-mute"),
 };
 if (!document.fullscreenEnabled) buttons.fullscreen.hidden = true;
+
+const sound = new Sound();
+const director = new SoundDirector(sound);
+const showMute = () => (buttons.mute.textContent = sound.muted ? "🔇" : "🔊");
+showMute();
+// Audio can only start from a tap/click/keypress; any of them will do.
+for (const type of ["pointerdown", "pointerup", "touchend", "keydown"]) {
+  addEventListener(type, () => sound.unlock(), { capture: true });
+}
 
 let levelIndex = 0;
 let level = LEVELS[levelIndex]();
@@ -45,6 +56,7 @@ let last = performance.now();
 function setMode(next) {
   mode = next;
   modeTime = 0;
+  if ((mode === "paused") !== sound.paused) sound.setPaused(mode === "paused");
 }
 
 async function toggleFullscreen() {
@@ -66,6 +78,9 @@ function handleEvents() {
   for (const ev of input.drain()) {
     if (ev.type === "fullscreen") {
       toggleFullscreen();
+    } else if (ev.type === "mute") {
+      sound.toggleMute();
+      showMute();
     } else if (ev.type === "restart") {
       level = LEVELS[levelIndex]();
       setMode("playing");
@@ -131,8 +146,10 @@ function frame(now) {
   const gait = input.gait();
   if (mode === "playing") {
     level.update(dt, move, gait);
+    director.update(level);
     if (level.outcome) setMode(level.outcome);
   }
+  sound.updateAmbient();
   buttons.sneak.classList.toggle("on", input.sneakToggle);
   buttons.sprint.classList.toggle("on", input.sprintToggle);
   draw();
