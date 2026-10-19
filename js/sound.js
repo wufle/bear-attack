@@ -18,8 +18,9 @@ const GROUPS = {
   woman_huh: 3, woman_scream: 3,
   bark: 4, sniff: 2, whine: 2, dog_eat: 1,
   throw: 1, flop: 2, splash: 2, reel: 1, cloth: 2,
+  radio: 3, click: 2, owl: 3, fanfare: 1, clink: 2, shovel: 3, sizzle: 1, snow_step: 4,
 };
-const LOOPS = ["amb_day", "amb_crickets", "amb_campfire", "amb_lake", "amb_kids"];
+const LOOPS = ["amb_day", "amb_crickets", "amb_campfire", "amb_lake", "amb_kids", "amb_winter"];
 
 // Which clips each kind of voice line uses.
 const VOICES = {
@@ -39,6 +40,20 @@ const VOICES = {
   },
   fisher: {
     idle: ["reel", "man_whistle"],
+    huh: ["man_hmm", "man_huh"],
+    rustle: ["man_hmm"],
+    calm: ["man_hm"],
+    scream: ["man_scream"],
+  },
+  ranger: {
+    idle: ["radio", "radio", "man_whistle"],
+    huh: ["click", "man_hmm"],
+    rustle: ["man_hmm"],
+    calm: ["radio"],
+    scream: ["man_scream"],
+  },
+  shoveler: {
+    idle: ["shovel", "shovel", "man_whistle"],
     huh: ["man_hmm", "man_huh"],
     rustle: ["man_hmm"],
     calm: ["man_hm"],
@@ -205,15 +220,20 @@ export class SoundDirector {
   // Background sound for whatever level is on screen (call every frame).
   ambience(level) {
     const s = this.sound;
-    if (!level.dark) {
-      s.setAmbience(level.ambience);
-      return;
+    // A lit fire crackles louder as Bruno gets closer.
+    const fire = level.fires[0];
+    const near = fire ? clamp(1 - level.bruno.pos.dist(fire) / 700, 0.08, 1) : 0;
+    s.setAmbience({ ...level.ambience, amb_campfire: 0.6 * near });
+    if (fire) s.panLoop("amb_campfire", panFor(fire.x) - panFor(level.bruno.pos.x));
+    // Owls hoot now and then at night.
+    if (level.dark && s.ready) {
+      const now = s.ctx.currentTime;
+      if (!this.nextOwl || this.nextOwl > now + 30) this.nextOwl = now + rand(4, 10);
+      if (now >= this.nextOwl) {
+        s.play("owl", { vol: rand(0.25, 0.45), pan: rand(-0.9, 0.9) });
+        this.nextOwl = now + rand(8, 18);
+      }
     }
-    // Night: crickets everywhere, and the campfire crackles louder as Bruno gets closer.
-    const fire = level.lights[0];
-    const near = fire ? clamp(1 - level.bruno.pos.dist(fire.pos) / 700, 0.08, 1) : 0;
-    s.setAmbience({ amb_crickets: 0.35, amb_campfire: 0.6 * near });
-    if (fire) s.panLoop("amb_campfire", panFor(fire.pos.x) - panFor(level.bruno.pos.x));
   }
 
   // Call once per frame while the level is being played.
@@ -236,7 +256,10 @@ export class SoundDirector {
       else if (ev.type === "throw") s.play("throw", { vol: 0.7, pan });
       else if (ev.type === "flop") s.play("flop", { vol: 0.8, pan: at });
       else if (ev.type === "splash") s.play("splash", { vol: 0.9, pan: at });
+      else if (ev.type === "costume" && ev.costume === "queen") s.play("fanfare", { vol: 0.7, pan, rate: 1 });
       else if (ev.type === "costume" || ev.type === "costume-off") s.play("cloth", { vol: 0.8, pan });
+      else if (ev.type === "crown-off") s.play("clink", { vol: 0.9, pan });
+      else if (ev.type === "melt") s.play("sizzle", { vol: 0.9, pan });
     }
     level.events.length = 0;
 
@@ -250,7 +273,7 @@ export class SoundDirector {
       this.stride += bruno.pos.dist(this.lastPos);
       if (this.stride >= BRUNO_STRIDE[bruno.gait]) {
         this.stride = 0;
-        s.play("bruno_step", { vol: BRUNO_STEP_VOLUME[bruno.gait], pan, rate: rand(0.75, 0.85) });
+        s.play(level.snow ? "snow_step" : "bruno_step", { vol: BRUNO_STEP_VOLUME[bruno.gait], pan, rate: rand(0.75, 0.85) });
         if (bruno.hidingIn(level.blockers) && bruno.gait !== Gait.SNEAK) s.play("rustle", { vol: 0.5, pan });
       }
     }
@@ -265,7 +288,8 @@ export class SoundDirector {
       const vol = clamp(1.15 - p.pos.dist(bruno.pos) / 900, 0.3, 1);
       const personPan = panFor(p.pos.x);
       if (p.speechTimer > rec.speechTimer + 0.01) {
-        const groups = VOICES[p.voice]?.[p.speechKind] ?? [];
+        const voice = VOICES[p.voice] ?? VOICES.man;
+        const groups = voice[p.speechKind] ?? voice.huh; // e.g. bowing uses their "huh?" sounds
         if (groups.length) s.play(choice(groups), { vol: 0.85 * vol, pan: personPan, rate: rand(0.97, 1.03) });
         // a dog keeps barking as it runs off
         if (p.animal && p.speechKind === "scream") s.play("bark", { vol: 0.8 * vol, pan: personPan, delay: 0.9 });
@@ -276,7 +300,8 @@ export class SoundDirector {
         const fleeing = p.state === PersonState.FLEE;
         if (rec.stride >= (fleeing ? FLEE_STRIDE : WALK_STRIDE)) {
           rec.stride = 0;
-          s.play(fleeing ? "run" : "step", { vol: (fleeing ? 0.5 : 0.25) * vol, pan: personPan });
+          const clip = level.snow ? "snow_step" : fleeing ? "run" : "step";
+          s.play(clip, { vol: (fleeing ? 0.5 : 0.25) * vol, pan: personPan });
         }
       }
       rec.pos = p.pos;

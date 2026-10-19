@@ -1,7 +1,7 @@
 // Bear Attack - Bruno the bear sneaks up on people in his territory.
 
 import { Vec } from "./actors.js";
-import { drawCard, drawHud, drawScene, makeBackground } from "./draw.js";
+import { COSTUME_NAMES, drawCard, drawHud, drawScene, makeBackground } from "./draw.js";
 import { Input } from "./input.js";
 import { HEIGHT, LEVELS, WIDTH } from "./level.js";
 import { Sound, SoundDirector } from "./sound.js";
@@ -197,6 +197,7 @@ function frame(now) {
   buttons.fish.textContent = `Fish ×${level.fishLeft}`;
   buttons.costume.hidden = !level.costumes.length;
   buttons.costume.classList.toggle("on", Boolean(level.bruno.costume));
+  buttons.costume.textContent = level.bruno.costume ? COSTUME_NAMES[level.bruno.costume].replace(/^(the|a) /, "") : "Disguise";
   buttons.prev.hidden = mode !== "intro" || levelIndex === 0;
   buttons.next.hidden = mode !== "intro" || levelIndex >= unlocked;
   buttons.sneak.classList.toggle("on", input.sneakToggle);

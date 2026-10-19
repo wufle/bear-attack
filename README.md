@@ -17,8 +17,12 @@ for the full game plan.
    downwind, so watch the wind, or throw him a fish.
 5. **Scout Troop:** five scouts and their leader. Put on the Grandma disguise to
    fool grown-ups (kids aren't fooled).
+6. **Ranger Station:** night rangers with a tower searchlight and flashlights.
+   Granny won't work here, but everyone bows to the Queen.
+7. **Snowy Cabins:** Bruno leaves paw prints in the snow that people follow.
+   Disguise yourself as a snowman, but not near the fire!
 
-Your progress is saved in the browser. On the level card, press 1-5 or use ◀ ▶ to
+Your progress is saved in the browser. On the level card, press 1-7 or use ◀ ▶ to
 replay any level you've reached.
 
 Sounds are real recordings from [Freesound](https://freesound.org), all CC0
@@ -39,7 +43,7 @@ Modelled on Minecraft.
 | Pounce | Left click (toward cursor) or Space | Pounce button, or tap the right side (toward the tap) |
 | Growl (level 3+) | Right click or G | Growl button |
 | Throw a fish (level 4+) | Q (like dropping an item) | Fish button |
-| Grandma disguise (level 5) | C | Disguise button |
+| Disguises (level 5+): Granny, Queen, Snowman | C (cycles through them) | Disguise button |
 | Pause | Esc | ❚❚ button |
 | Restart level | R | |
 | Sound on/off | M | 🔊 button |

@@ -10,6 +10,9 @@ const TWIG_NOISE = { radius: 300, strength: 0.7 };
 const FISH_THROW = 230; // how far Bruno throws a fish
 const FISH_FLIGHT = 0.45; // seconds in the air
 const FISH_LIFE = 15; // seconds a fish lies there before it's forgotten
+const PRINT_STRIDE = 30; // Bruno leaves a paw print this often in the snow
+const PRINT_LIFE = 30; // seconds before snow covers a print
+const MELT_RADIUS = 170; // a snowman melts this close to a fire
 const FISH_NOISE = { radius: 320, strength: 0, lines: ["…why is there a salmon here?", "Is that… a fish?", "Where did that fish come from?"] };
 
 export class Level {
@@ -17,6 +20,7 @@ export class Level {
     number, title, intro, tip = null, bruno, people, blockers,
     props = [], twigs = [], lights = [], dark = false, canGrowl = false, ground = "meadow",
     water = [], docks = [], wind = null, fish = 0, costumes = [], ambience = { amb_day: 0.45 },
+    snow = false, roads = [],
   }) {
     this.number = number;
     this.title = title;
@@ -39,6 +43,13 @@ export class Level {
     this.fish = []; // thrown fish: { from, pos, age, landed, eaten }
     this.costumes = costumes;
     this.ambience = ambience; // background loops and their volumes
+    this.snow = snow; // Bruno leaves footprints...
+    this.roads = roads; // ...except on ploughed roads: [{ points, width }]
+    this.footprints = []; // { id, pos, angle, side, age }
+    this.printId = 0;
+    this.printStride = 0;
+    this.fires = props.filter((p) => p.type === "fire" && p.lit !== false).map((p) => p.pos);
+    this.crownFx = null; // the Queen's crown tumbling off
     this.bounds = { x: 0, y: 0, w: WIDTH, h: HEIGHT };
     this.events = []; // things that happened this frame, for sound effects
     this.noises = [];
@@ -71,11 +82,36 @@ export class Level {
     bruno.pounce(aim);
   }
 
+  // C cycles: no disguise -> each disguise this level has -> no disguise.
   toggleCostume() {
     const bruno = this.bruno;
     if (!this.costumes.length || bruno.state !== BearState.FREE) return;
-    bruno.costume = bruno.costume ? null : this.costumes[0];
-    this.events.push({ type: "costume", pos: bruno.pos });
+    const options = [null, ...this.costumes];
+    bruno.costume = options[(options.indexOf(bruno.costume) + 1) % options.length];
+    this.events.push({ type: "costume", costume: bruno.costume, pos: bruno.pos });
+  }
+
+  onRoad(pos) {
+    return this.roads.some(({ points, width }) =>
+      points.slice(1).some((b, i) => {
+        const a = points[i];
+        const ab = b.sub(a);
+        const t = Math.max(0, Math.min(1, pos.sub(a).dot(ab) / ab.dot(ab)));
+        return a.add(ab.scale(t)).dist(pos) < width / 2;
+      }),
+    );
+  }
+
+  updateSnow(dt, before) {
+    for (const print of this.footprints) print.age += dt;
+    this.footprints = this.footprints.filter((p) => p.age < PRINT_LIFE);
+    const bruno = this.bruno;
+    if (!this.snow || bruno.costume === "snowman") return; // snowmen glide, apparently
+    this.printStride += bruno.pos.dist(before);
+    if (this.printStride < PRINT_STRIDE) return;
+    this.printStride = 0;
+    if (this.onRoad(bruno.pos)) return;
+    this.footprints.push({ id: this.printId++, pos: bruno.pos, angle: bruno.facing.angle, side: this.printId % 2 ? 1 : -1, age: 0 });
   }
 
   throwFish() {
@@ -117,6 +153,17 @@ export class Level {
     this.t += dt;
     const bruno = this.bruno;
     const before = bruno.pos;
+    // Running in the Queen costume knocks the crown off.
+    if (bruno.costume === "queen" && gait === Gait.RUN && move.length > 0 && bruno.state === BearState.FREE) {
+      bruno.costume = null;
+      this.crownFx = { pos: bruno.pos, age: 0 };
+      this.events.push({ type: "crown-off", pos: bruno.pos });
+    }
+    // A snowman doesn't last long next to a fire.
+    if (bruno.costume === "snowman" && this.fires.some((f) => f.dist(bruno.pos) < MELT_RADIUS)) {
+      bruno.costume = null;
+      this.events.push({ type: "melt", pos: bruno.pos });
+    }
     bruno.update(dt, move, gait, this.bounds, this.people, this.blockers);
     if (this.inWater(bruno.pos)) {
       // Slide along the shore instead of stopping dead.
@@ -125,6 +172,8 @@ export class Level {
       bruno.pos = !this.inWater(slideX) ? slideX : !this.inWater(slideY) ? slideY : before;
     }
     this.updateFish(dt);
+    this.updateSnow(dt, before);
+    if (this.crownFx && (this.crownFx.age += dt) > 1.2) this.crownFx = null;
 
     const stomping = bruno.state === BearState.POUNCING || (bruno.state === BearState.FREE && bruno.gait !== Gait.SNEAK);
     for (const twig of this.twigs) {
@@ -142,6 +191,7 @@ export class Level {
       lure: this.lure,
       wind: this.wind,
       fish: this.fish,
+      footprints: this.footprints,
     };
     for (const person of this.people) {
       if (person.update(dt, bruno, this.blockers, this.bounds, env)) this.alertEarshot(person);
@@ -177,6 +227,8 @@ const v = (x, y) => new Vec(x, y);
 const bush = (x, y, r = 46) => new Blocker(v(x, y), r, true);
 const tree = (x, y, r = 70) => new Blocker(v(x, y), r, false, 18);
 const route = (...points) => points.map(([x, y]) => v(x, y));
+// Buildings and trucks: drawn as props, blocking like a solid round thing you can't see through.
+const wall = (x, y, r) => new Blocker(v(x, y), r, false, r * 0.9, true);
 
 function picnic() {
   const kid = new Person(v(880, 330), route([880, 330], [1010, 250], [960, 450], [800, 410]), {
@@ -283,6 +335,7 @@ function campfire() {
     canGrowl: true,
     ground: "night",
     lights: [{ pos: fire, radius: 230 }],
+    ambience: { amb_crickets: 0.35 },
     props: [
       { type: "fire", pos: fire },
       { type: "tent", pos: v(890, 220), w: 120, h: 90 },
@@ -419,4 +472,134 @@ function scouts() {
   });
 }
 
-export const LEVELS = [picnic, hiker, campfire, fishing, scouts];
+const RANGER_LINES = {
+  notGranny: ["Ma'am, the park is CLOSED!", "That's no granny!"],
+  huh: ["Who's out there?", "Hello? Park's closed!", "Huh?"],
+  calm: ["Just a raccoon.", "All clear."],
+};
+
+function rangers() {
+  const ranger = (start, points, extra) =>
+    new Person(v(...start), route(start, ...points), {
+      voice: "ranger",
+      walkSpeed: 52,
+      fleeSpeed: 250,
+      nightVision: 90,
+      notFooled: ["grandma"],
+      lines: RANGER_LINES,
+      shirt: "#6b7d3a",
+      hair: "#8a6a3a",
+      idleLines: ["Ranger 2, all quiet?", "*radio crackles*", "Long night…"],
+      ...extra,
+    });
+  const tower = ranger([380, 200], [], {
+    flashlight: { range: 520, angle: 22 }, // the tower searchlight
+    nightVision: 70,
+    turnSpeed: 0.6,
+    lookRange: 3.0,
+    pause: [30, 40],
+    idleLines: ["Tower to base: all clear.", "*radio crackles*"],
+  });
+  tower.angle = Math.PI / 2;
+  const patrol = ranger([1050, 120], [[640, 330], [180, 600], [620, 640], [1050, 680], [1220, 380]], {
+    flashlight: { range: 280, angle: 38 },
+    walkSpeed: 55,
+    pause: [1, 2],
+    lookRange: 1.2,
+  });
+  const desk = ranger([900, 360], [[1090, 560], [900, 360]], {
+    flashlight: { range: 240, angle: 40 },
+    pauses: { 0: [8, 12], 1: [3, 4] },
+    lookRange: 0.8,
+  });
+  desk.angle = Math.PI / 2;
+  return new Level({
+    number: 6,
+    title: "Ranger Station",
+    intro: "Three park rangers are on night duty: one sweeps a searchlight from the lookout tower, one patrols with a flashlight, one is at the station. Rangers won't fall for Granny - the park is closed!",
+    tip: "NEW: The Queen! Press C to switch disguises. Anyone who sees the Queen stops to BOW - pounce while they're bowing! Walk, don't run, or your crown falls off.",
+    bruno: new Bruno(v(60, 690)),
+    people: [tower, patrol, desk],
+    dark: true,
+    canGrowl: true,
+    fish: 2,
+    costumes: ["grandma", "queen"],
+    ground: "night",
+    ambience: { amb_crickets: 0.3 },
+    lights: [{ pos: v(900, 340), radius: 160 }],
+    props: [
+      { type: "cabin", pos: v(900, 240), w: 220, h: 140 },
+      { type: "lamp", pos: v(900, 322) },
+      { type: "tower", pos: v(380, 200) },
+      { type: "truck", pos: v(1150, 560) },
+    ],
+    blockers: [
+      wall(840, 240, 72), wall(960, 240, 72), wall(1150, 560, 44),
+      bush(200, 450), bush(300, 640), bush(460, 520), bush(560, 380, 44), bush(700, 520), bush(820, 640, 44),
+      bush(1000, 470, 44), bush(1200, 220, 44), bush(640, 160, 44), bush(160, 260, 44), bush(1230, 680, 40),
+      tree(120, 120, 62), tree(560, 60, 56), tree(780, 420, 52), tree(1100, 80, 56), tree(420, 680, 58),
+      tree(260, 360, 54), tree(1240, 480, 56),
+    ],
+  });
+}
+
+function cabins() {
+  const kid = (start, points, extra) =>
+    new Person(v(...start), route(start, ...points), { voice: "kid", walkSpeed: 55, viewDistance: 210, pause: [3, 5], ...extra });
+  return new Level({
+    number: 7,
+    title: "Snowy Cabins",
+    intro: "A family is staying at the snowy cabins. Bruno leaves PAW PRINTS in the snow, and anyone who spots them will follow the trail! Ploughed roads don't leave prints.",
+    tip: "NEW: Snowman disguise! Stand still and grown-ups won't notice you - and kids run over to hug a snowman. Don't move while they're looking, and stay away from the fire or you'll melt!",
+    bruno: new Bruno(v(40, 615)),
+    people: [
+      new Person(v(300, 560), route([300, 560], [300, 380]), {
+        voice: "shoveler",
+        walkSpeed: 30,
+        pause: [1, 2],
+        shirt: "#c0392b",
+        hair: "#3b2a1a",
+        idleLines: ["*shovel shovel*", "Phew! So much snow.", "*shovel shovel*"],
+      }),
+      new Person(v(1150, 430), route([1150, 430], [720, 440], [980, 330]), {
+        voice: "woman",
+        pause: [2, 4],
+        shirt: "#2e86ab",
+        hair: "#d4a04c",
+        idleLines: ["Brr! Chilly!", "Who wants hot cocoa?", "More firewood…"],
+      }),
+      kid([560, 490], [[610, 530]], { hair: "#e6be5a", shirt: "#f078a0", idleLines: ["My snowman needs a nose!", "Snowball fight!"] }),
+      kid([840, 90], [[880, 330]], { hair: "#5a3c22", shirt: "#e67e22", walkSpeed: 75, pause: [1, 2], idleLines: ["Wheee!", "Again! Again!"] }),
+    ],
+    snow: true,
+    ground: "snow",
+    canGrowl: true,
+    fish: 2,
+    costumes: ["grandma", "queen", "snowman"],
+    ambience: { amb_winter: 0.5, amb_day: 0.1 },
+    roads: [
+      { points: [v(0, 615), v(400, 600), v(800, 640), v(1280, 600)], width: 70 },
+      { points: [v(300, 600), v(300, 330)], width: 46 },
+    ],
+    props: [
+      { type: "road", points: [v(0, 615), v(400, 600), v(800, 640), v(1280, 600)], width: 70 },
+      { type: "road", points: [v(300, 600), v(300, 330)], width: 46 },
+      { type: "cabin", pos: v(300, 230), w: 200, h: 130, snowy: true },
+      { type: "cabin", pos: v(980, 220), w: 220, h: 140, snowy: true },
+      { type: "fire", pos: v(700, 400) },
+      { type: "log", pos: v(650, 450), angle: 0.4 },
+      { type: "woodpile", pos: v(1170, 450) },
+      { type: "snowman", pos: v(520, 470) },
+      { type: "sledhill", pos: v(860, 200) },
+    ],
+    blockers: [
+      wall(245, 230, 68), wall(355, 230, 68), wall(920, 225, 72), wall(1040, 225, 72),
+      bush(120, 420), bush(170, 250, 44), bush(460, 360, 44), bush(520, 680, 44), bush(760, 520, 44),
+      bush(1000, 470, 44), bush(1160, 680, 44), bush(1220, 300, 44), bush(620, 160, 44), bush(1100, 110, 40),
+      tree(60, 80, 58), tree(540, 70, 56), tree(1220, 80, 58), tree(80, 690, 50), tree(700, 700, 50), tree(1000, 690, 50),
+      tree(440, 520, 50),
+    ],
+  });
+}
+
+export const LEVELS = [picnic, hiker, campfire, fishing, scouts, rangers, cabins];

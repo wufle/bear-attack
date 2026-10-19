@@ -94,6 +94,22 @@ CLIPS = {
     "reel0": ("464701", 0, 2.5),
     "cloth0": ("19291", 0.4, 2.0),
     "cloth1": ("334219", 0, 0.9),
+    # Rangers, the Queen, snow
+    "radio0": ("524205", 0, 1.2),
+    "radio1": ("732209", 0, 0.8),
+    "radio2": ("524204", 0, 2.0),
+    "click0": ("187335", 0, 0.6),
+    "click1": ("410360", 0, 0.3),
+    "owl0": ("465697", 0.2, 1.3),
+    "owl1": ("465697", 2.6, 4.0),
+    "owl2": ("398734", 0.1, 3.6),
+    "fanfare0": ("418525", 0, 2.2),
+    "clink0": ("259553", 0, 1.5),
+    "clink1": ("489767", 0, 1.0),
+    "shovel0": ("268056", 0.4, 1.4),
+    "shovel1": ("268056", 3.2, 4.0),
+    "shovel2": ("560957", 0.1, 1.0),
+    "sizzle0": ("351406", 3.5, 6.0),
     # Woman
     "woman_huh0": ("242616", 0, 0.5),
     "woman_huh1": ("460922", 0.5, 1.1),
@@ -110,6 +126,7 @@ LOOPS = {
     "amb_campfire": ("637523", 2, 24, 2.0),
     "amb_lake": ("528067", 0, 20, 2.0),
     "amb_kids": ("541151", 0, 30, 2.5),
+    "amb_winter": ("352436", 0, 30, 2.5),
 }
 
 # Footsteps are picked out of longer recordings automatically:
@@ -118,6 +135,7 @@ STEPS = {
     "bruno_step": ("658429", 4, 0.3),
     "step": ("389625", 4, 0.2),
     "run": ("127955", 4, 0.15),
+    "snow_step": ("613849", 4, 0.3),
 }
 
 SWOOPIN = {"kid_scream0": "scream0.ogg", "kid_scream1": "scream1.ogg", "kid_scream2": "scream2.ogg"}

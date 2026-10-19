@@ -8,6 +8,7 @@ const GROUNDS = {
   meadow: { grass: "#629c48", tufts: "#528a3e", flowers: ["#ffffff", "#ffdc50", "#f08cc8"], flowerCount: 70 },
   forest: { grass: "#4f8a3c", tufts: "#3f7330", flowers: ["#e8d8a0", "#c86a3c"], flowerCount: 25 },
   night: { grass: "#4a7a3c", tufts: "#3c6830", flowers: ["#ffffff"], flowerCount: 20 },
+  snow: { grass: "#eef3f6", tufts: "#d3dfe7", flowers: ["#ffffff"], flowerCount: 0 },
 };
 const BUSH = "#2c6834";
 const BUSH_LIGHT = "#428444";
@@ -221,6 +222,94 @@ function drawFlagpole(ctx, pos, t) {
   ctx.fill();
 }
 
+function drawRoad(ctx, prop) {
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "#b9c5cf";
+  ctx.lineWidth = prop.width;
+  ctx.beginPath();
+  prop.points.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+  ctx.stroke();
+  ctx.strokeStyle = "#a6b4c0";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([14, 12]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawCabin(ctx, prop) {
+  const { pos, w, h } = prop;
+  const x = pos.x - w / 2;
+  const y = pos.y - h / 2;
+  ctx.fillStyle = "#3a2a1c";
+  ctx.fillRect(x - 4, y - 4, w + 8, h + 8);
+  // roof seen from above: two slopes and a ridge
+  ctx.fillStyle = prop.snowy ? "#f2f6f8" : "#7a4a2a";
+  ctx.fillRect(x, y, w, h / 2);
+  ctx.fillStyle = prop.snowy ? "#dde6ec" : "#6a3e22";
+  ctx.fillRect(x, y + h / 2, w, h / 2);
+  ctx.fillStyle = "#4a3020";
+  ctx.fillRect(x, y + h / 2 - 2, w, 4);
+  ctx.fillStyle = "#8a5a3a";
+  ctx.fillRect(x + w * 0.72, y + 12, 18, 18); // chimney
+  ctx.fillStyle = "#5a5a5a";
+  ctx.fillRect(x + w * 0.72 + 4, y + 16, 10, 10);
+}
+
+function drawLamp(ctx, pos, t) {
+  circle(ctx, pos, 7, "#3a3a3a");
+  circle(ctx, pos, 4.5, `rgba(255,236,160,${0.85 + 0.15 * Math.sin(t * 7)})`);
+}
+
+function drawTower(ctx, pos) {
+  ctx.strokeStyle = "#5e4024";
+  ctx.lineWidth = 5;
+  for (const [dx, dy] of [[-30, -30], [30, -30], [30, 30], [-30, 30]]) {
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
+    ctx.lineTo(pos.x + dx * 1.3, pos.y + dy * 1.3);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#8a6238";
+  ctx.fillRect(pos.x - 30, pos.y - 30, 60, 60);
+  ctx.strokeStyle = "#5e4024";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(pos.x - 30, pos.y - 30, 60, 60);
+}
+
+function drawTruck(ctx, pos) {
+  ctx.fillStyle = "#1e1e1e";
+  for (const [dx, dy] of [[-30, -26], [26, -26], [-30, 20], [26, 20]]) ctx.fillRect(pos.x + dx, pos.y + dy, 10, 8);
+  ctx.fillStyle = "#4f6b2e";
+  ctx.beginPath();
+  ctx.roundRect(pos.x - 44, pos.y - 24, 88, 48, 8);
+  ctx.fill();
+  ctx.fillStyle = "#9ec3d6";
+  ctx.fillRect(pos.x + 4, pos.y - 18, 14, 36);
+  ctx.fillStyle = "#3b5222";
+  ctx.fillRect(pos.x - 40, pos.y - 20, 40, 40);
+}
+
+function drawSnowmanProp(ctx, pos) {
+  circle(ctx, pos, 22, "#c9d6de");
+  circle(ctx, pos, 20, "#ffffff");
+  circle(ctx, pos.add(new Vec(0, -20)), 13, "#c9d6de");
+  circle(ctx, pos.add(new Vec(0, -20)), 11.5, "#ffffff");
+  circle(ctx, pos.add(new Vec(-4, -23)), 2, INK);
+  circle(ctx, pos.add(new Vec(4, -23)), 2, INK);
+}
+
+function drawSledHill(ctx, pos) {
+  ctx.strokeStyle = "rgba(150,170,185,0.6)";
+  ctx.lineWidth = 3;
+  for (const dx of [-12, 12]) {
+    ctx.beginPath();
+    ctx.moveTo(pos.x + dx - 20, pos.y - 120);
+    ctx.lineTo(pos.x + dx + 20, pos.y + 130);
+    ctx.stroke();
+  }
+}
+
 function drawProps(ctx, props, t) {
   for (const prop of props) {
     if (prop.type === "blanket") drawBlanket(ctx, prop);
@@ -230,6 +319,13 @@ function drawProps(ctx, props, t) {
     else if (prop.type === "bobber") drawBobber(ctx, prop.pos, t);
     else if (prop.type === "tacklebox") drawTackleBox(ctx, prop.pos);
     else if (prop.type === "flagpole") drawFlagpole(ctx, prop.pos, t);
+    else if (prop.type === "road") drawRoad(ctx, prop);
+    else if (prop.type === "cabin") drawCabin(ctx, prop);
+    else if (prop.type === "lamp") drawLamp(ctx, prop.pos, t);
+    else if (prop.type === "tower") drawTower(ctx, prop.pos);
+    else if (prop.type === "truck") drawTruck(ctx, prop.pos);
+    else if (prop.type === "snowman") drawSnowmanProp(ctx, prop.pos);
+    else if (prop.type === "sledhill") drawSledHill(ctx, prop.pos);
     else if (prop.type === "tent") drawTent(ctx, prop);
     else if (prop.type === "log") drawLog(ctx, prop.pos, prop.angle);
     else if (prop.type === "woodpile") drawWoodpile(ctx, prop.pos);
@@ -285,6 +381,19 @@ function drawDarkness(ctx, level, t) {
   for (const light of level.lights) hole(light.pos, light.radius * (1 + 0.03 * Math.sin(t * 11)), 1);
   hole(level.bruno.pos, 80, 0.55);
   for (const p of level.people) if (p.catchable) hole(p.pos, 45, 0.5);
+  for (const p of level.people) {
+    if (!p.flashlight || !p.calmOrCurious && p.state !== PersonState.FLEE || p.bowing) continue;
+    const g = c.createRadialGradient(p.pos.x, p.pos.y, 0, p.pos.x, p.pos.y, p.flashlight.range);
+    g.addColorStop(0, "rgba(0,0,0,0.9)");
+    g.addColorStop(0.75, "rgba(0,0,0,0.7)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    c.fillStyle = g;
+    c.beginPath();
+    c.moveTo(p.pos.x, p.pos.y);
+    c.arc(p.pos.x, p.pos.y, p.flashlight.range, p.angle - p.flashlight.angle / 2, p.angle + p.flashlight.angle / 2);
+    c.closePath();
+    c.fill();
+  }
   ctx.drawImage(drawDarkness.canvas, 0, 0);
   // warm glow on top of the firelight
   ctx.globalCompositeOperation = "lighter";
@@ -316,35 +425,40 @@ function drawGrowl(ctx, fx) {
 }
 
 function drawCones(ctx, people, dark) {
-  for (const p of people) {
-    const color = CONE_COLORS[p.state];
-    if (!color) continue;
-    ctx.fillStyle = color;
+  const wedge = (p, range, spread) => {
     ctx.beginPath();
     ctx.moveTo(p.pos.x, p.pos.y);
-    const range = dark ? p.nightVision : p.viewDistance;
-    ctx.arc(p.pos.x, p.pos.y, range, p.angle - p.viewAngle / 2, p.angle + p.viewAngle / 2);
+    ctx.arc(p.pos.x, p.pos.y, range, p.angle - spread / 2, p.angle + spread / 2);
     ctx.closePath();
     ctx.fill();
+  };
+  for (const p of people) {
+    const color = CONE_COLORS[p.state];
+    if (!color || p.bowing) continue; // bowing: eyes on the ground
+    ctx.fillStyle = color;
+    wedge(p, dark ? p.nightVision : p.viewDistance, p.viewAngle);
+    if (dark && p.flashlight) wedge(p, p.flashlight.range, p.flashlight.angle);
   }
 }
 
-function drawBush(ctx, b, seeThrough) {
+function drawBush(ctx, b, seeThrough, snowy) {
   const r = b.radius;
   ctx.globalAlpha = seeThrough ? 0.6 : 1;
   for (const [dx, dy, k] of [[-0.4, -0.2, 0.65], [0.4, -0.3, 0.6], [0.3, 0.35, 0.62], [-0.35, 0.35, 0.6], [0, 0, 0.7]]) {
     circle(ctx, b.pos.add(new Vec(dx, dy).scale(r)), r * k, BUSH);
   }
   for (const [dx, dy] of [[-0.3, -0.35], [0.25, -0.15], [-0.05, 0.25]]) {
-    circle(ctx, b.pos.add(new Vec(dx, dy).scale(r)), r * 0.22, BUSH_LIGHT);
+    circle(ctx, b.pos.add(new Vec(dx, dy).scale(r)), r * 0.22, snowy ? "#f4f8fa" : BUSH_LIGHT);
   }
+  if (snowy) for (const [dx, dy] of [[-0.4, -0.3], [0.35, -0.4]]) circle(ctx, b.pos.add(new Vec(dx, dy).scale(r)), r * 0.3, "#f4f8fa");
   ctx.globalAlpha = 1;
 }
 
-function drawCanopy(ctx, b) {
+function drawCanopy(ctx, b, snowy) {
   ctx.globalAlpha = 0.9;
-  circle(ctx, b.pos, b.radius, CANOPY);
-  circle(ctx, b.pos.sub(new Vec(b.radius / 4, b.radius / 4)), b.radius / 2, CANOPY_LIGHT);
+  circle(ctx, b.pos, b.radius, snowy ? "#2f5d3a" : CANOPY);
+  circle(ctx, b.pos.sub(new Vec(b.radius / 4, b.radius / 4)), b.radius / 2, snowy ? "#f0f5f8" : CANOPY_LIGHT);
+  if (snowy) circle(ctx, b.pos.add(new Vec(b.radius / 3, b.radius / 4)), b.radius / 4, "#f0f5f8");
   ctx.globalAlpha = 1;
 }
 
@@ -387,6 +501,11 @@ function drawPerson(ctx, p, t) {
   circle(ctx, p.pos.sub(side.scale(p.radius * 0.9)), p.radius * 0.35, SKIN);
   circle(ctx, p.pos, p.radius + 2, INK);
   circle(ctx, p.pos, p.radius, p.shirt);
+  if (p.bowing) {
+    // head down, so we see the top of it
+    circle(ctx, p.pos.add(f.scale(7)), p.radius * 0.55, p.hair);
+    return;
+  }
   circle(ctx, p.pos.add(f.scale(2)), p.radius * 0.6, SKIN);
   circle(ctx, p.pos.sub(f.scale(2)), p.radius * 0.55, p.hair);
 }
@@ -500,8 +619,22 @@ function drawBruno(ctx, bruno, t) {
   const f = bruno.facing;
   const side = f.perp();
   const pos = bruno.pos;
+  if (bruno.costume === "snowman") {
+    drawSnowmanBruno(ctx, bruno, t);
+    return;
+  }
   for (const s of [1, -1]) circle(ctx, pos.add(f.scale(8)).add(side.scale(s * 17)), 9, FUR_DARK);
   circle(ctx, pos, Bruno.RADIUS, FUR);
+  if (bruno.costume === "queen") {
+    // red royal robe with an ermine collar
+    circle(ctx, pos.sub(f.scale(2)), Bruno.RADIUS + 4, "#b3122e");
+    ctx.strokeStyle = "#f6f2ea";
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, Bruno.RADIUS - 6, 0, Math.PI * 2);
+    ctx.stroke();
+    for (let k = 0; k < 8; k++) circle(ctx, pos.add(Vec.fromAngle((k * Math.PI) / 4, Bruno.RADIUS - 6)), 1.6, INK);
+  }
   if (bruno.costume === "grandma") {
     // flowery dress and shawl, grey bun, specs - very convincing
     circle(ctx, pos.sub(f.scale(2)), Bruno.RADIUS + 3, "#b56bb5");
@@ -518,6 +651,7 @@ function drawBruno(ctx, bruno, t) {
   circle(ctx, pos.add(f.scale(19)), 10, SNOUT);
   circle(ctx, pos.add(f.scale(27)), 4, INK);
   for (const s of [1, -1]) circle(ctx, pos.add(f.scale(9)).add(side.scale(s * 8)), 3, INK);
+  if (bruno.costume === "queen") drawCrown(ctx, pos.sub(f.scale(4)), 0, 1);
   if (bruno.costume === "grandma") {
     ctx.strokeStyle = "#e6c34a";
     ctx.lineWidth = 2;
@@ -538,6 +672,66 @@ function drawBruno(ctx, bruno, t) {
     ctx.fillStyle = TEXT;
     ctx.fillText("*lick lick*  Mmm!", pos.x, pos.y - Bruno.RADIUS - 10);
   }
+}
+
+function drawCrown(ctx, pos, angle, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(pos.x, pos.y);
+  ctx.rotate(angle);
+  ctx.fillStyle = "#f2c230";
+  ctx.strokeStyle = "#a07a10";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(-13, 7);
+  ctx.lineTo(-13, -6);
+  ctx.lineTo(-7, 1);
+  ctx.lineTo(0, -10);
+  ctx.lineTo(7, 1);
+  ctx.lineTo(13, -6);
+  ctx.lineTo(13, 7);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  circle(ctx, new Vec(0, 2), 2.5, "#d6203a");
+  ctx.restore();
+}
+
+function drawSnowmanBruno(ctx, bruno, t) {
+  const f = bruno.facing;
+  const side = f.perp();
+  const wobble = bruno.moving ? Math.sin(t * 12) * 2 : 0;
+  const pos = bruno.pos.add(side.scale(wobble));
+  // bear ears poking out the back... nobody will notice
+  for (const s of [1, -1]) circle(ctx, pos.sub(f.scale(12)).add(side.scale(s * 15)), 7, FUR_DARK);
+  circle(ctx, pos.sub(f.scale(8)), 28, "#c9d6de");
+  circle(ctx, pos.sub(f.scale(8)), 26, "#ffffff");
+  circle(ctx, pos.add(f.scale(12)), 17, "#c9d6de");
+  circle(ctx, pos.add(f.scale(12)), 15.5, "#ffffff");
+  for (const k of [-10, -2, 6]) circle(ctx, pos.add(f.scale(k - 8)), 2.2, INK); // coal buttons... from above
+  const head = pos.add(f.scale(12));
+  for (const s of [1, -1]) circle(ctx, head.add(f.scale(4)).add(side.scale(s * 6)), 2.4, INK);
+  ctx.fillStyle = "#f08a24";
+  ctx.beginPath();
+  const tip = head.add(f.scale(26));
+  const baseA = head.add(f.scale(9)).add(side.scale(3.5));
+  const baseB = head.add(f.scale(9)).sub(side.scale(3.5));
+  ctx.moveTo(tip.x, tip.y);
+  ctx.lineTo(baseA.x, baseA.y);
+  ctx.lineTo(baseB.x, baseB.y);
+  ctx.fill();
+}
+
+function drawFootprints(ctx, prints) {
+  for (const p of prints) {
+    const fade = Math.max(0, 1 - p.age / 30);
+    ctx.globalAlpha = 0.55 * fade;
+    const f = Vec.fromAngle(p.angle);
+    const at = p.pos.add(f.perp().scale(p.side * 9));
+    circle(ctx, at, 6, "#8fa6b6");
+    for (const s of [-1, 0, 1]) circle(ctx, at.add(f.scale(8)).add(f.perp().scale(s * 4.5)), 2.3, "#8fa6b6");
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawTussle(ctx, pos, t) {
@@ -573,20 +767,26 @@ export function drawScene(ctx, background, level, t) {
   ctx.drawImage(background, 0, 0, WIDTH, HEIGHT);
   drawWater(ctx, level.water, t);
   drawProps(ctx, level.props, t);
+  drawFootprints(ctx, level.footprints);
   drawTwigs(ctx, level.twigs);
   drawSmell(ctx, level);
   drawCones(ctx, level.people, level.dark);
-  for (const b of level.blockers) if (b.solid) circle(ctx, b.pos, b.solid, TRUNK);
+  for (const b of level.blockers) if (b.solid && !b.invisible) circle(ctx, b.pos, b.solid, TRUNK);
   drawNoise(ctx, level.bruno);
   for (const p of level.people) drawPerson(ctx, p, t);
   drawFish(ctx, level.fish.filter((f) => f.landed), t);
   drawBruno(ctx, level.bruno, t);
   const hidingIn = level.bruno.hidingIn(level.blockers);
-  for (const b of level.blockers) if (b.hideable) drawBush(ctx, b, b === hidingIn);
-  for (const b of level.blockers) if (!b.hideable) drawCanopy(ctx, b);
+  const snowy = level.ground === "snow";
+  for (const b of level.blockers) if (b.hideable) drawBush(ctx, b, b === hidingIn, snowy);
+  for (const b of level.blockers) if (!b.hideable && !b.invisible) drawCanopy(ctx, b, snowy);
   drawDarkness(ctx, level, t);
   if (level.bruno.state === BearState.TUSSLING) drawTussle(ctx, level.bruno.pos, t);
   drawGrowl(ctx, level.growlFx);
+  if (level.crownFx) {
+    const { pos, age } = level.crownFx;
+    drawCrown(ctx, pos.add(new Vec(age * 60, -40 * Math.sin(age * 3) + age * 30)), age * 9, Math.max(0, 1 - age / 1.2));
+  }
   drawFish(ctx, level.fish.filter((f) => !f.landed), t);
   for (const p of level.people) {
     drawMeter(ctx, p);
@@ -594,14 +794,18 @@ export function drawScene(ctx, background, level, t) {
   }
 }
 
+export const COSTUME_NAMES = { grandma: "Granny", queen: "the Queen", snowman: "a Snowman" };
 const STATUS = { [Gait.SNEAK]: "Sneaking (silent)", [Gait.WALK]: "Walking", [Gait.RUN]: "Sprinting (LOUD!)" };
 
 // `inset` keeps the HUD clear of the corner buttons: { left, right } in world units.
 export function drawHud(ctx, level, touch, inset) {
+  // Dark outline so the text reads on grass, at night and on snow.
   const shadowed = (text, x, y, align) => {
     ctx.textAlign = align;
-    ctx.fillStyle = "rgba(0,0,0,0.45)";
-    ctx.fillText(text, x + 2, y + 2);
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = "rgba(20,24,20,0.7)";
+    ctx.strokeText(text, x, y);
     ctx.fillStyle = TEXT;
     ctx.fillText(text, x, y);
   };
@@ -615,7 +819,7 @@ export function drawHud(ctx, level, touch, inset) {
   let status = "Standing still";
   if (bruno.hidingIn(level.blockers)) status = "Hiding in a bush";
   else if (bruno.moving) status = STATUS[bruno.gait];
-  if (bruno.costume) status = `Disguised as Granny · ${status}`;
+  if (bruno.costume) status = `Disguised as ${COSTUME_NAMES[bruno.costume]} · ${status}`;
   ctx.font = font(22);
   shadowed(status, left, 52, "left");
 
@@ -661,7 +865,10 @@ function drawHotbar(ctx, level) {
   const slots = [];
   if (level.canGrowl) slots.push({ key: "G", label: "Growl", on: false });
   if (level.fishMax) slots.push({ key: "Q", label: `Fish ×${level.fishLeft}`, on: false, empty: !level.fishLeft });
-  if (level.costumes.length) slots.push({ key: "C", label: "Granny", on: Boolean(level.bruno.costume) });
+  if (level.costumes.length) {
+    const costume = level.bruno.costume;
+    slots.push({ key: "C", label: costume ? COSTUME_NAMES[costume].replace(/^(the|a) /, "") : "Disguise", on: Boolean(costume) });
+  }
   if (!slots.length) return;
   const w = 118;
   const h = 40;

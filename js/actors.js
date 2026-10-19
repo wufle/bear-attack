@@ -30,11 +30,12 @@ const wrapAngle = (a) => ((((a + Math.PI) % TAU) + TAU) % TAU) - Math.PI;
 // Something round that blocks line of sight: a bush (Bruno can hide inside)
 // or a tree (only behind). `solid` is the radius nobody can walk through.
 export class Blocker {
-  constructor(pos, radius, hideable, solid = 0) {
+  constructor(pos, radius, hideable, solid = 0, invisible = false) {
     this.pos = pos;
     this.radius = radius;
     this.hideable = hideable;
     this.solid = solid;
+    this.invisible = invisible; // part of a building or truck, which is drawn as a prop
   }
 }
 
@@ -88,7 +89,8 @@ export class Bruno {
   static LICK_TIME = 3.2; // licks, a lip smack, then "Mmm"
   static GROWL_RADIUS = 420;
   static GROWL_COOLDOWN = 3;
-  static COSTUME_SPEED = 0.7; // granny can't hurry
+  // Disguises slow Bruno down (and none of them can sprint).
+  static COSTUME_SPEED = { grandma: 0.7, queen: 0.55, snowman: 0.45 };
 
   constructor(pos) {
     this.pos = pos;
@@ -143,7 +145,7 @@ export class Bruno {
       this.moving = move.length > 0;
       if (this.moving) {
         this.facing = move.normalize();
-        const speed = Bruno.SPEEDS[this.gait] * (this.costume ? Bruno.COSTUME_SPEED : 1);
+        const speed = Bruno.SPEEDS[this.gait] * (Bruno.COSTUME_SPEED[this.costume] ?? 1);
         this.pos = this.pos.add(this.facing.scale(speed * dt));
       }
     } else if (this.state === BearState.POUNCING) {
@@ -200,8 +202,16 @@ const LINES = {
   alert: ["AAAAH!"],
   granny: ["Evening, ma'am!", "Hello, granny!", "Lovely dress!"], // grown-ups fooled by the disguise
   notGranny: ["THAT'S A BEAR IN A DRESS!", "Granny?! That's a BEAR!"], // kids are not
+  bow: ["Your Majesty! *bows*", "*curtsies* Your Majesty!", "The Queen?! *bows deeply*"],
+  notQueen: ["Wait… why is the Queen so HAIRY?", "That's no Queen!"],
+  snowman: ["A snowman! Let's hug it!", "Ooh, a snowman!"], // kids run over to a snowman
+  snowmanMoved: ["Did that snowman just MOVE?!", "Snowmen can't walk…"],
+  tracks: ["Huh? Bear tracks!", "Are those… paw prints?", "Something big walked here…"],
 };
 const DOG_EAT_TIME = 6;
+const BOW_TIME = 3.5; // how long people bow to the Queen
+const BOW_COOLDOWN = 12; // after bowing once, they get a proper look
+const PRINT_FOLLOW = 170; // how far apart footprints can be and still be followed
 
 export class Person {
   constructor(pos, route, opts = {}) {
@@ -229,6 +239,16 @@ export class Person {
     this.smellRange = opts.smellRange ?? 0; // dogs smell Bruno from downwind of him
     this.eatTimer = 0;
     this.greeted = false;
+    // A flashlight lets them see far in the dark, but only where it points: { range, angle (degrees) }.
+    this.flashlight = opts.flashlight
+      ? { range: opts.flashlight.range, angle: (opts.flashlight.angle * Math.PI) / 180 }
+      : null;
+    this.notFooled = opts.notFooled ?? []; // disguises this person sees straight through
+    this.bowTimer = 0;
+    this.bowCooldown = 0;
+    this.hugCooldown = 0;
+    this.tracking = false;
+    this.lastPrintId = -1; // newest footprint they've already looked at
 
     this.angle = 0;
     this.state = PersonState.WANDER;
@@ -268,17 +288,26 @@ export class Person {
     this.say(line, "scream", 3.0);
   }
 
-  // How far this person can see Bruno right now: not far in the dark, unless he's in the light.
-  sightRange(env) {
-    return env.dark && !env.brunoLit ? this.nightVision : this.viewDistance;
+  // How far this person can see Bruno right now: not far in the dark, unless he's
+  // in the light or in their flashlight beam.
+  sightRange(env, inBeam = false) {
+    if (!env.dark || env.brunoLit) return this.viewDistance;
+    return inBeam ? this.flashlight.range : this.nightVision;
+  }
+
+  get bowing() {
+    return this.bowTimer > 0;
   }
 
   // "clear" if Bruno is in plain view, "rustle" if the bush he's in is shaking, else null.
   canSee(bruno, blockers, env) {
     const to = bruno.pos.sub(this.pos);
     const dist = to.length;
-    if (dist > this.sightRange(env) + Bruno.RADIUS) return null;
-    if (dist > 1 && Math.abs(wrapAngle(to.angle - this.angle)) > this.viewAngle / 2) return null;
+    const off = dist > 1 ? Math.abs(wrapAngle(to.angle - this.angle)) : 0;
+    if (off > this.viewAngle / 2) return null;
+    const inBeam = Boolean(this.flashlight) && off <= this.flashlight.angle / 2;
+    this.lastSightRange = this.sightRange(env, inBeam);
+    if (dist > this.lastSightRange + Bruno.RADIUS) return null;
     const hidingIn = bruno.hidingIn(blockers);
     for (const b of blockers) {
       if (b === hidingIn || this.pos.dist(b.pos) < b.radius) continue;
@@ -304,25 +333,52 @@ export class Person {
       return false;
     }
 
+    // Bowing to the Queen: frozen, eyes on the ground.
+    if (this.bowTimer > 0) {
+      this.bowTimer -= dt;
+      if (this.bowTimer <= 0) this.bowCooldown = BOW_COOLDOWN;
+      return false;
+    }
+    this.bowCooldown = Math.max(0, this.bowCooldown - dt);
+    this.hugCooldown = Math.max(0, this.hugCooldown - dt);
+
     if (this.animal && this.chaseFish(dt, env)) return false;
 
     let noticed = false;
     const dist = this.pos.dist(bruno.pos);
     const sight = this.canSee(bruno, blockers, env);
-    // Grown-ups see a sweet old granny; kids and dogs see a bear in a dress.
-    const fooled = sight === "clear" && bruno.costume === "grandma" && !this.isKid && !this.animal && bruno.state === BearState.FREE;
+    const reaction = this.costumeReaction(bruno, sight);
+    if (reaction === "bow") {
+      this.bowTimer = BOW_TIME;
+      this.lureTarget = null;
+      this.say(choice(this.lines.bow), "bow", BOW_TIME);
+      return false;
+    }
+    const fooled = reaction === "fooled";
     if (fooled) {
-      if (!this.greeted && dist < 220) {
+      this.suspicion -= dt * 0.3;
+      if (bruno.costume === "grandma" && !this.greeted && dist < 220) {
         this.greeted = true;
         this.say(choice(this.lines.granny), "calm");
+      } else if (bruno.costume === "snowman" && this.isKid && this.hugCooldown <= 0 && dist > 60) {
+        // Kids can't resist a snowman.
+        this.hugCooldown = 10;
+        this.lureTarget = bruno.pos;
+        this.tracking = false;
+        this.state = PersonState.INVESTIGATE;
+        this.say(choice(this.lines.snowman), "idle");
       }
-      this.suspicion -= dt * 0.3;
+    } else if (reaction === "moving-snowman") {
+      this.suspicion += dt * 0.5;
+      noticed = true;
+      if (this.speechTimer <= 0) this.say(choice(this.lines.snowmanMoved), "rustle");
     } else if (sight === "clear") {
       if (bruno.state === BearState.TUSSLING || bruno.state === BearState.LICKING) this.suspicion = 1;
-      const closeness = 1 - Math.min(dist / this.sightRange(env), 1);
+      const closeness = 1 - Math.min(dist / this.lastSightRange, 1);
       const rate = bruno.costume && this.isKid ? 1.6 : 1; // a bear in a dress is extra alarming
       this.suspicion += dt * (0.5 + 2.0 * closeness) * rate;
-      if (bruno.costume && this.isKid && this.speechTimer <= 0) this.say(choice(this.lines.notGranny), "huh");
+      const seeThrough = { grandma: this.lines.notGranny, queen: this.lines.notQueen }[bruno.costume];
+      if (seeThrough && this.speechTimer <= 0) this.say(choice(seeThrough), "huh");
       noticed = true;
     } else if (sight === "rustle") {
       this.suspicion += dt * 0.3;
@@ -335,6 +391,21 @@ export class Person {
       const downwind = this.pos.sub(bruno.pos).normalize().dot(env.wind);
       if (downwind > 0.6) {
         this.suspicion += dt * (0.4 + 1.4 * (1 - dist / this.smellRange));
+        noticed = true;
+      }
+    }
+
+    // Footprints in the snow: they follow the trail.
+    if (!noticed && !this.tracking && env.footprints?.length) {
+      const print = this.spotPrint(env.footprints, blockers, env);
+      if (print) {
+        this.tracking = true;
+        this.lastPrintId = print.id;
+        this.lureTarget = print.pos;
+        this.interest = print.pos;
+        this.suspicion = Math.max(this.suspicion, SUSPICIOUS_AT + 0.1);
+        this.state = PersonState.INVESTIGATE;
+        this.say(choice(this.lines.tracks), "huh");
         noticed = true;
       }
     }
@@ -384,7 +455,7 @@ export class Person {
     if (this.state === PersonState.WANDER && this.suspicion >= SUSPICIOUS_AT) {
       this.state = PersonState.INVESTIGATE;
       if (this.speechTimer <= 0) this.say(choice(this.lines.huh), "huh");
-    } else if (this.state === PersonState.INVESTIGATE && this.suspicion < CALM_AT) {
+    } else if (this.state === PersonState.INVESTIGATE && this.suspicion < CALM_AT && !this.lureTarget) {
       this.state = PersonState.WANDER;
       this.say(choice(this.lines.calm), "calm");
     }
@@ -393,7 +464,16 @@ export class Person {
       if (this.lureTarget) {
         const to = this.lureTarget.sub(this.pos);
         if (to.length < 50) {
-          this.lureTarget = null; // got there, nothing to see... yet
+          // got there - follow the next footprint if there is one, otherwise nothing to see... yet
+          const next = this.tracking ? this.nextPrint(env.footprints) : null;
+          if (next) {
+            this.lastPrintId = next.id;
+            this.lureTarget = next.pos;
+            this.interest = next.pos;
+          } else {
+            this.lureTarget = null;
+            this.tracking = false;
+          }
         } else {
           this.turnToward(to.angle, dt);
           this.pos = this.pos.add(to.normalize().scale(this.walkSpeed * dt));
@@ -406,6 +486,42 @@ export class Person {
     }
     this.pos = pushOut(this.pos, this.radius, blockers, bounds);
     return false;
+  }
+
+  // How they react to Bruno's disguise when they can see him clearly:
+  // "fooled" (no suspicion), "bow" (the Queen!), "moving-snowman", or null (they see a bear).
+  costumeReaction(bruno, sight) {
+    const costume = bruno.costume;
+    if (sight !== "clear" || !costume || bruno.state !== BearState.FREE || this.animal) return null;
+    if (this.notFooled.includes(costume)) return null;
+    if (costume === "grandma") return this.isKid ? null : "fooled";
+    if (costume === "queen") return this.bowCooldown > 0 ? null : "bow";
+    if (costume === "snowman") return bruno.moving ? "moving-snowman" : "fooled";
+    return null;
+  }
+
+  // The freshest footprint they haven't followed yet that they can see.
+  spotPrint(prints, blockers, env) {
+    const range = env.dark ? this.nightVision : this.viewDistance * 0.8;
+    let best = null;
+    for (const print of prints) {
+      if (print.id <= this.lastPrintId || (best && print.id < best.id)) continue;
+      const to = print.pos.sub(this.pos);
+      if (to.length > range || Math.abs(wrapAngle(to.angle - this.angle)) > this.viewAngle / 2) continue;
+      if (blockers.some((b) => this.pos.dist(b.pos) > b.radius && segmentHitsCircle(this.pos, print.pos, b.pos, b.radius * 0.85))) continue;
+      best = print;
+    }
+    return best;
+  }
+
+  // While following a trail: the next newer footprint near the one they're standing on.
+  nextPrint(prints) {
+    let best = null;
+    for (const print of prints ?? []) {
+      if (print.id <= this.lastPrintId || this.pos.dist(print.pos) > PRINT_FOLLOW) continue;
+      if (!best || print.id < best.id) best = print;
+    }
+    return best;
   }
 
   // Dogs drop everything for a fish. Returns true while the dog is busy with one.
