@@ -86,7 +86,7 @@ export class Bruno {
   static POUNCE_COOLDOWN = 0.7;
   static TUSSLE_TIME = 2.2; // matches the eating sound
   static TUSSLE_NOISE = 250; // people nearby hear the commotion
-  static LICK_TIME = 3.2; // licks, a lip smack, then "Mmm"
+  static LICK_TIME = 1.2; // a quick lick of the lips, then he can run (the "Mmm" plays on as he goes)
   static GROWL_RADIUS = 420;
   static GROWL_COOLDOWN = 3;
   // Disguises slow Bruno down (and none of them can sprint).

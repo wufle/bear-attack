@@ -320,8 +320,9 @@ export class SoundDirector {
   // Afterwards: licks, a lip smack, then a happy "Mmm".
   lick(pan) {
     const s = this.sound;
-    const lickTime = s.play("lick", { vol: 0.9, pan, rate: 1 }) || 1.4;
+    // Sped up so it fits the short pause before Bruno can move again.
+    const lickTime = Math.min(s.play("lick", { vol: 0.9, pan, rate: 1.3 }) || 1, 0.9);
     s.play("smack", { vol: 0.8, pan, delay: lickTime });
-    s.play("mmm", { vol: 0.95, pan, delay: lickTime + 0.35, rate: rand(0.97, 1.03) });
+    s.play("mmm", { vol: 0.95, pan, delay: lickTime + 0.2, rate: rand(1.05, 1.12) });
   }
 }
