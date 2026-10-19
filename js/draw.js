@@ -785,7 +785,15 @@ export function drawScene(ctx, background, level, t) {
   drawGrowl(ctx, level.growlFx);
   if (level.crownFx) {
     const { pos, age } = level.crownFx;
-    drawCrown(ctx, pos.add(new Vec(age * 60, -40 * Math.sin(age * 3) + age * 30)), age * 9, Math.max(0, 1 - age / 1.2));
+    const fade = Math.max(0, 1 - age / 1.2);
+    drawCrown(ctx, pos.add(new Vec(age * 60, -40 * Math.sin(age * 3) + age * 30)), age * 9, fade);
+    ctx.globalAlpha = fade;
+    ctx.font = font(22);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.fillStyle = "#ffd75a";
+    ctx.fillText("The crown rolled away!", pos.x, pos.y - 46);
+    ctx.globalAlpha = 1;
   }
   drawFish(ctx, level.fish.filter((f) => !f.landed), t);
   for (const p of level.people) {

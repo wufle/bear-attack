@@ -274,6 +274,7 @@ export class SoundDirector {
       if (this.stride >= BRUNO_STRIDE[bruno.gait]) {
         this.stride = 0;
         s.play(level.snow ? "snow_step" : "bruno_step", { vol: BRUNO_STEP_VOLUME[bruno.gait], pan, rate: rand(0.75, 0.85) });
+        if (bruno.costume === "queen") s.play("click", { vol: 0.6, pan, rate: rand(0.9, 1.1) }); // clip-clop
         if (bruno.hidingIn(level.blockers) && bruno.gait !== Gait.SNEAK) s.play("rustle", { vol: 0.5, pan });
       }
     }

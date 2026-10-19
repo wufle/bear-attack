@@ -89,6 +89,7 @@ export class Bruno {
   static LICK_TIME = 1.2; // a quick lick of the lips, then he can run (the "Mmm" plays on as he goes)
   static GROWL_RADIUS = 420;
   static GROWL_COOLDOWN = 3;
+  static HEELS_NOISE = 200; // the Queen's royal shoes clip-clop, even when sneaking
   // Disguises slow Bruno down (and none of them can sprint).
   static COSTUME_SPEED = { grandma: 0.7, queen: 0.55, snowman: 0.45 };
 
@@ -113,6 +114,7 @@ export class Bruno {
     if (this.state === BearState.POUNCING) return Bruno.POUNCE_NOISE;
     if (this.state === BearState.TUSSLING) return Bruno.TUSSLE_NOISE;
     if (this.state !== BearState.FREE || !this.moving) return 0;
+    if (this.costume === "queen") return Math.max(Bruno.NOISE[this.gait], Bruno.HEELS_NOISE);
     return Bruno.NOISE[this.gait];
   }
 
@@ -207,10 +209,10 @@ const LINES = {
   snowman: ["A snowman! Let's hug it!", "Ooh, a snowman!"], // kids run over to a snowman
   snowmanMoved: ["Did that snowman just MOVE?!", "Snowmen can't walk…"],
   tracks: ["Huh? Bear tracks!", "Are those… paw prints?", "Something big walked here…"],
+  heels: ["Who's that clip-clopping?", "Fancy shoes I hear…", "Click, clack… who's there?"],
 };
 const DOG_EAT_TIME = 6;
-const BOW_TIME = 3.5; // how long people bow to the Queen
-const BOW_COOLDOWN = 12; // after bowing once, they get a proper look
+const BOW_TIME = 2.5; // how long people bow to the Queen - each person only bows once
 const PRINT_FOLLOW = 170; // how far apart footprints can be and still be followed
 
 export class Person {
@@ -245,7 +247,7 @@ export class Person {
       : null;
     this.notFooled = opts.notFooled ?? []; // disguises this person sees straight through
     this.bowTimer = 0;
-    this.bowCooldown = 0;
+    this.bowed = false; // fooled by the Queen once already; never again
     this.hugCooldown = 0;
     this.tracking = false;
     this.lastPrintId = -1; // newest footprint they've already looked at
@@ -336,10 +338,9 @@ export class Person {
     // Bowing to the Queen: frozen, eyes on the ground.
     if (this.bowTimer > 0) {
       this.bowTimer -= dt;
-      if (this.bowTimer <= 0) this.bowCooldown = BOW_COOLDOWN;
+      if (this.bowTimer <= 0) this.bowed = true;
       return false;
     }
-    this.bowCooldown = Math.max(0, this.bowCooldown - dt);
     this.hugCooldown = Math.max(0, this.hugCooldown - dt);
 
     if (this.animal && this.chaseFish(dt, env)) return false;
@@ -375,7 +376,8 @@ export class Person {
     } else if (sight === "clear") {
       if (bruno.state === BearState.TUSSLING || bruno.state === BearState.LICKING) this.suspicion = 1;
       const closeness = 1 - Math.min(dist / this.lastSightRange, 1);
-      const rate = bruno.costume && this.isKid ? 1.6 : 1; // a bear in a dress is extra alarming
+      // A bear in a dress, or a "Queen" they've already bowed to, is extra alarming.
+      const rate = (bruno.costume && this.isKid) || (bruno.costume === "queen" && this.bowed) ? 1.6 : 1;
       this.suspicion += dt * (0.5 + 2.0 * closeness) * rate;
       const seeThrough = { grandma: this.lines.notGranny, queen: this.lines.notQueen }[bruno.costume];
       if (seeThrough && this.speechTimer <= 0) this.say(choice(seeThrough), "huh");
@@ -437,6 +439,13 @@ export class Person {
       this.suspicion += dt * 0.6 * (1 - dist / hearingRange);
       if (bruno.state === BearState.POUNCING) this.suspicion += dt * 3;
       noticed = true;
+      // Clip-clop: they turn round right away to see who's coming (and then bow, too early).
+      if (bruno.costume === "queen" && this.state === PersonState.WANDER) {
+        this.interest = bruno.pos;
+        this.suspicion = Math.max(this.suspicion, SUSPICIOUS_AT);
+        this.state = PersonState.INVESTIGATE;
+        this.say(choice(this.lines.heels), "huh");
+      }
     }
 
     if (noticed) {
@@ -495,7 +504,7 @@ export class Person {
     if (sight !== "clear" || !costume || bruno.state !== BearState.FREE || this.animal) return null;
     if (this.notFooled.includes(costume)) return null;
     if (costume === "grandma") return this.isKid ? null : "fooled";
-    if (costume === "queen") return this.bowCooldown > 0 ? null : "bow";
+    if (costume === "queen") return this.bowed ? null : "bow";
     if (costume === "snowman") return bruno.moving ? "moving-snowman" : "fooled";
     return null;
   }

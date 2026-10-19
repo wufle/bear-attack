@@ -50,6 +50,7 @@ export class Level {
     this.printStride = 0;
     this.fires = props.filter((p) => p.type === "fire" && p.lit !== false).map((p) => p.pos);
     this.crownFx = null; // the Queen's crown tumbling off
+    this.lostCostumes = new Set(); // there's only one crown: once it's off, it's gone
     this.bounds = { x: 0, y: 0, w: WIDTH, h: HEIGHT };
     this.events = []; // things that happened this frame, for sound effects
     this.noises = [];
@@ -75,7 +76,9 @@ export class Level {
   pounce(aim) {
     const bruno = this.bruno;
     if (!bruno.canPounce) return;
-    if (bruno.costume) {
+    if (bruno.costume === "queen") {
+      this.loseCrown(); // pouncing knocks the crown off for good
+    } else if (bruno.costume) {
       bruno.costume = null; // the disguise flies off mid-pounce
       this.events.push({ type: "costume-off", pos: bruno.pos });
     }
@@ -86,9 +89,16 @@ export class Level {
   toggleCostume() {
     const bruno = this.bruno;
     if (!this.costumes.length || bruno.state !== BearState.FREE) return;
-    const options = [null, ...this.costumes];
+    const options = [null, ...this.costumes.filter((c) => !this.lostCostumes.has(c))];
     bruno.costume = options[(options.indexOf(bruno.costume) + 1) % options.length];
     this.events.push({ type: "costume", costume: bruno.costume, pos: bruno.pos });
+  }
+
+  loseCrown() {
+    this.bruno.costume = null;
+    this.lostCostumes.add("queen");
+    this.crownFx = { pos: this.bruno.pos, age: 0 };
+    this.events.push({ type: "crown-off", pos: this.bruno.pos });
   }
 
   onRoad(pos) {
@@ -155,9 +165,7 @@ export class Level {
     const before = bruno.pos;
     // Running in the Queen costume knocks the crown off.
     if (bruno.costume === "queen" && gait === Gait.RUN && move.length > 0 && bruno.state === BearState.FREE) {
-      bruno.costume = null;
-      this.crownFx = { pos: bruno.pos, age: 0 };
-      this.events.push({ type: "crown-off", pos: bruno.pos });
+      this.loseCrown();
     }
     // A snowman doesn't last long next to a fire.
     if (bruno.costume === "snowman" && this.fires.some((f) => f.dist(bruno.pos) < MELT_RADIUS)) {
@@ -517,7 +525,7 @@ function rangers() {
     number: 6,
     title: "Ranger Station",
     intro: "Three park rangers are on night duty: one sweeps a searchlight from the lookout tower, one patrols with a flashlight, one is at the station. Rangers won't fall for Granny - the park is closed!",
-    tip: "NEW: The Queen! Press C to switch disguises. Anyone who sees the Queen stops to BOW - pounce while they're bowing! Walk, don't run, or your crown falls off.",
+    tip: "NEW: The Queen! Press C to switch disguises. Everyone BOWS the first time they see her - pounce while they're bowing! But her shoes clip-clop, and there's only ONE crown: pounce or run and it's gone.",
     bruno: new Bruno(v(60, 690)),
     people: [tower, patrol, desk],
     dark: true,

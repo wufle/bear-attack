@@ -56,7 +56,7 @@ happens for a while.
 |---|---|---|
 | Bush hat | Invisible while standing still | Moving: "Bushes don't walk…" |
 | Cardboard box | Very sneaky | Super slow; people try to sit on it |
-| **Queen costume** 👑 | People who see the Queen stop and bow — frozen for a few seconds, a perfect time to pounce. Soldiers salute and stand at attention | Royal walking pace only — run and the crown falls off. Dogs aren't fooled |
+| **Queen costume** 👑 | Everyone bows the first time they see the Queen — frozen for a couple of seconds, a perfect time to pounce. Soldiers salute and stand at attention | Royal walking pace only. Her shoes clip-clop even when sneaking, so people turn and bow too early. Each person only bows once. There's one crown per level: pounce or run and it's gone. Dogs aren't fooled |
 | Grandma disguise | Walk in plain sight | Fools adults, never kids ("THAT'S A BEAR") |
 | Tree stump | Totally invisible | Can't move at all |
 | Snowman | Perfect in snow | Melts near campfires |
