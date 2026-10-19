@@ -5,13 +5,15 @@
 //   Shift (hold)    sneak
 //   Ctrl (hold) or double-tap a move key   sprint (stops when you stop moving)
 //   Left click      pounce toward the cursor (Space also pounces, like a jump)
+//   Right click / G growl (levels that have it)
+//   1-9             pick a level you've reached (on the level card)
 //   Esc             pause
 //   M               sound on/off
 //
 // Touch (like Minecraft Bedrock):
 //   Left side of the screen    joystick
 //   Tap anywhere on the right  pounce toward that spot
-//   Buttons                    Pounce, Sneak (toggle), Sprint (toggle)
+//   Buttons                    Pounce, Sneak (toggle), Sprint (toggle), Growl
 
 import { Gait, Vec } from "./actors.js";
 
@@ -52,6 +54,9 @@ export class Input {
     this.bindButton("btn-pause", () => this.events.push({ type: "pause" }));
     this.bindButton("btn-fullscreen", () => this.events.push({ type: "fullscreen" }));
     this.bindButton("btn-mute", () => this.events.push({ type: "mute" }));
+    this.bindButton("btn-growl", () => this.events.push({ type: "growl" }));
+    this.bindButton("btn-prev", () => this.events.push({ type: "step-level", by: -1 }));
+    this.bindButton("btn-next", () => this.events.push({ type: "step-level", by: 1 }));
     this.bindButton("btn-sneak", () => {
       this.sneakToggle = !this.sneakToggle;
       if (this.sneakToggle) this.sprintToggle = false;
@@ -89,6 +94,10 @@ export class Input {
       this.events.push({ type: "confirm" });
     } else if (e.code === "Escape") {
       this.events.push({ type: "pause" });
+    } else if (e.code === "KeyG") {
+      this.events.push({ type: "growl" });
+    } else if (/^Digit[1-9]$/.test(e.code)) {
+      this.events.push({ type: "pick", index: Number(e.code.slice(5)) - 1 });
     } else if (e.code === "KeyM") {
       this.events.push({ type: "mute" });
     } else if (e.code === "KeyR" && !e.ctrlKey && !e.metaKey) {
@@ -101,6 +110,7 @@ export class Input {
     if (e.pointerType === "mouse") {
       this.setTouchMode(false);
       if (e.button === 0) this.events.push({ type: "pounce", at: this.toWorld(e.clientX, e.clientY) });
+      else if (e.button === 2) this.events.push({ type: "growl" }); // right-click = "use", like Minecraft
       return;
     }
     this.setTouchMode(true);

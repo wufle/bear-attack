@@ -1,16 +1,51 @@
-// Procedural sound effects, synthesized live with Web Audio (no audio files).
+// Sound: recorded clips (all CC0, see sounds/CREDITS.md), played with Web Audio.
 //
-// Sound owns the AudioContext and knows how to make each noise.
-// SoundDirector watches the level each frame and decides when to make them,
-// so the game logic in actors.js doesn't need to know sound exists.
+// Sound loads the clips and plays them. SoundDirector watches the level each
+// frame and decides what to play, so the game logic doesn't know sound exists.
 
 import { BearState, Bruno, Gait, PersonState } from "./actors.js";
 import { WIDTH } from "./level.js";
 
 const MUTE_KEY = "bear-attack-muted";
-const MASTER_VOLUME = 0.9;
+const MASTER_VOLUME = 1.0;
+
+// Clip groups and how many numbered variants each has (sounds/<group><n>.mp3).
+const GROUPS = {
+  bruno_step: 4, step: 4, run: 3, rustle: 3, twig: 3,
+  pounce: 2, growl: 2, eat: 3, crunch: 3, lick: 2, smack: 2, mmm: 3,
+  kid_giggle: 3, kid_laugh: 1, kid_hum: 1, kid_huh: 1, kid_gasp: 2, kid_hello: 1, kid_scream: 3,
+  man_whistle: 3, man_laugh: 1, man_hmm: 2, man_huh: 1, man_hm: 1, man_scream: 3,
+  woman_huh: 3, woman_scream: 3,
+};
+const LOOPS = ["amb_day", "amb_crickets", "amb_campfire"];
+
+// Which clips each kind of voice line uses.
+const VOICES = {
+  kid: {
+    idle: ["kid_giggle", "kid_laugh", "kid_hum"],
+    huh: ["kid_huh", "kid_gasp", "kid_hello"],
+    rustle: ["kid_gasp"],
+    calm: ["kid_giggle"],
+    scream: ["kid_scream"],
+  },
+  man: {
+    idle: ["man_whistle", "man_whistle", "man_laugh"],
+    huh: ["man_hmm", "man_huh"],
+    rustle: ["man_hmm"],
+    calm: ["man_hm"],
+    scream: ["man_scream"],
+  },
+  woman: {
+    idle: ["kid_giggle"],
+    huh: ["woman_huh"],
+    rustle: ["woman_huh"],
+    calm: [],
+    scream: ["woman_scream"],
+  },
+};
 
 const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+const choice = (items) => items[Math.floor(Math.random() * items.length)];
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 function loadMuted() {
@@ -31,38 +66,46 @@ function saveMuted(muted) {
 
 export class Sound {
   constructor() {
-    this.ctx = null;
     this.muted = loadMuted();
     this.paused = false;
-    this.nextBird = 0;
+    this.buffers = {}; // group -> [AudioBuffer]
+    this.loops = {}; // name -> { source, gain }
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    // The context starts suspended until the first tap/keypress, but we can load clips now.
+    this.ctx = new AudioContext();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = this.muted ? 0 : MASTER_VOLUME;
+    const compressor = this.ctx.createDynamicsCompressor();
+    this.master.connect(compressor).connect(this.ctx.destination);
+    this.load();
+  }
+
+  async load() {
+    const fetchOne = async (file) => {
+      const data = await (await fetch(`sounds/${file}.mp3`)).arrayBuffer();
+      return new Promise((resolve, reject) => this.ctx.decodeAudioData(data, resolve, reject));
+    };
+    const jobs = [];
+    for (const [group, count] of Object.entries(GROUPS)) {
+      this.buffers[group] = [];
+      for (let i = 0; i < count; i++) {
+        jobs.push(fetchOne(`${group}${i}`).then((b) => this.buffers[group].push(b)).catch(() => {}));
+      }
+    }
+    for (const name of LOOPS) {
+      jobs.push(fetchOne(name).then((b) => (this.buffers[name] = [b])).catch(() => {}));
+    }
+    await Promise.all(jobs);
   }
 
   // Browsers only allow audio after the player taps or presses a key.
   unlock() {
-    if (!this.ctx) {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContext) return;
-      this.attach(new AudioContext());
-    }
-    if (this.ctx.state === "suspended" && !this.paused) this.ctx.resume();
-  }
-
-  attach(ctx) {
-    this.ctx = ctx;
-    const compressor = ctx.createDynamicsCompressor();
-    compressor.connect(ctx.destination);
-    this.master = ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : MASTER_VOLUME;
-    this.master.connect(compressor);
-    this.noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
-    const data = this.noiseBuffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-    this.startAmbient();
+    if (this.ctx?.state === "suspended" && !this.paused) this.ctx.resume();
   }
 
   get ready() {
-    if (!this.ctx) return false;
-    return this.ctx.state === "running" || (typeof OfflineAudioContext !== "undefined" && this.ctx instanceof OfflineAudioContext);
+    return this.ctx?.state === "running";
   }
 
   setPaused(paused) {
@@ -78,280 +121,82 @@ export class Sound {
     if (this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : MASTER_VOLUME, this.ctx.currentTime, 0.05);
   }
 
-  // --- Building blocks ---
-
-  channel(pan = 0, gain = 1) {
-    const g = this.ctx.createGain();
-    g.gain.value = gain;
+  // Play a random clip from `group`. `delay` is seconds from now; `rate` changes speed and pitch.
+  play(group, { vol = 1, pan = 0, delay = 0, rate = rand(0.94, 1.06) } = {}) {
+    const buffers = this.buffers[group];
+    if (!this.ready || !buffers?.length) return 0;
+    const source = this.ctx.createBufferSource();
+    source.buffer = choice(buffers);
+    source.playbackRate.value = rate;
+    const gain = this.ctx.createGain();
+    gain.gain.value = vol;
+    let node = source.connect(gain);
     if (this.ctx.createStereoPanner) {
       const panner = this.ctx.createStereoPanner();
       panner.pan.value = clamp(pan, -1, 1);
-      g.connect(panner).connect(this.master);
-    } else {
-      g.connect(this.master);
+      node = node.connect(panner);
     }
-    return g;
+    node.connect(this.master);
+    source.start(this.ctx.currentTime + delay);
+    return source.buffer.duration / rate;
   }
 
-  envelope(param, t, peak, attack, dur) {
-    param.setValueAtTime(0.0001, t);
-    param.linearRampToValueAtTime(peak, t + attack);
-    param.exponentialRampToValueAtTime(0.0001, t + dur);
-  }
-
-  filter(type, freq, q = 1) {
-    const f = this.ctx.createBiquadFilter();
-    f.type = type;
-    f.frequency.value = freq;
-    f.Q.value = q;
-    return f;
-  }
-
-  noise(dest, t, dur, { type = "bandpass", freq = 1000, freqEnd = null, q = 1, gain = 1, attack = 0.005 } = {}) {
-    const src = this.ctx.createBufferSource();
-    src.buffer = this.noiseBuffer;
-    const f = this.filter(type, freq, q);
-    f.frequency.setValueAtTime(freq, t);
-    if (freqEnd) f.frequency.exponentialRampToValueAtTime(freqEnd, t + dur);
-    const g = this.ctx.createGain();
-    this.envelope(g.gain, t, gain, attack, dur);
-    src.connect(f).connect(g).connect(dest);
-    src.start(t, Math.random() * 1.5, dur + 0.05);
-  }
-
-  tone(dest, t, dur, { type = "sine", freq, freqEnd = null, gain = 1, attack = 0.005, filter = null, vibrato = null }) {
-    const osc = this.ctx.createOscillator();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, t);
-    if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, t + dur);
-    let node = osc;
-    if (filter) node = osc.connect(this.filter(filter.type, filter.freq, filter.q ?? 1));
-    const g = this.ctx.createGain();
-    this.envelope(g.gain, t, gain, attack, dur);
-    node.connect(g).connect(dest);
-    if (vibrato) this.wobble(osc.frequency, t, dur, vibrato.rate, vibrato.depth);
-    osc.start(t);
-    osc.stop(t + dur + 0.05);
-    return osc;
-  }
-
-  wobble(param, t, dur, rate, depth) {
-    const lfo = this.ctx.createOscillator();
-    lfo.frequency.value = rate;
-    const depthGain = this.ctx.createGain();
-    depthGain.gain.value = depth;
-    lfo.connect(depthGain).connect(param);
-    lfo.start(t);
-    lfo.stop(t + dur + 0.05);
-  }
-
-  // A rough, rumbling bear voice: two detuned saws, rattled by a fast tremolo.
-  growl(dest, t, dur, freq, freqEnd, gain) {
-    const f = this.filter("lowpass", 650, 5);
-    const rattle = this.ctx.createGain();
-    rattle.gain.value = 0.6;
-    this.wobble(rattle.gain, t, dur, rand(18, 26), 0.4);
-    const g = this.ctx.createGain();
-    this.envelope(g.gain, t, gain, 0.05, dur);
-    f.connect(rattle).connect(g).connect(dest);
-    for (const detune of [1, 1.07]) {
-      const osc = this.ctx.createOscillator();
-      osc.type = "sawtooth";
-      osc.frequency.setValueAtTime(freq * detune, t);
-      osc.frequency.exponentialRampToValueAtTime(freqEnd * detune, t + dur);
-      osc.connect(f);
-      osc.start(t);
-      osc.stop(t + dur + 0.05);
-    }
-    this.noise(dest, t, dur, { type: "lowpass", freq: 500, gain: gain * 0.5, attack: 0.05 });
-  }
-
-  // --- Footsteps ---
-
-  brunoStep(gait, inBush, pan) {
-    if (!this.ready) return;
-    const t = this.ctx.currentTime;
-    const v = { [Gait.SNEAK]: 0.12, [Gait.WALK]: 0.35, [Gait.RUN]: 0.6 }[gait];
-    const ch = this.channel(pan);
-    this.noise(ch, t, 0.11, { type: "lowpass", freq: 380, q: 0.7, gain: v * 1.4 });
-    this.tone(ch, t, 0.12, { freq: 75, freqEnd: 42, gain: v });
-    if (inBush) this.noise(ch, t, 0.3, { type: "bandpass", freq: 3200, freqEnd: 2000, q: 0.8, gain: v * 0.9, attack: 0.03 });
-  }
-
-  personStep(running, pan, vol) {
-    if (!this.ready) return;
-    const t = this.ctx.currentTime;
-    const ch = this.channel(pan, vol);
-    this.noise(ch, t, 0.05, { type: "bandpass", freq: running ? 900 : 1300, q: 1.2, gain: running ? 0.3 : 0.12 });
-  }
-
-  // --- Voices ---
-
-  // Cartoon babble: one little blip per syllable, pitched and shaped by the letters.
-  babble(text, pitch, pan, vol) {
-    if (!this.ready) return;
-    const ch = this.channel(pan, vol);
-    const asks = text.trim().endsWith("?");
-    const loud = text.includes("!");
-    let t = this.ctx.currentTime + 0.02;
-    const words = text.toLowerCase().replace(/[^a-z ]/g, "").split(" ").filter(Boolean);
-    words.forEach((word, w) => {
-      const syllables = Math.max(1, Math.round(word.length / 2.5));
-      for (let i = 0; i < syllables; i++) {
-        const code = word.charCodeAt(Math.min(i * 2, word.length - 1));
-        const freq = pitch * (0.85 + (code % 9) / 20);
-        const last = w === words.length - 1 && i === syllables - 1;
-        this.tone(ch, t, 0.075, {
-          type: "square",
-          freq,
-          freqEnd: last && asks ? freq * 1.4 : freq * 0.97,
-          gain: loud ? 0.4 : 0.28,
-          attack: 0.01,
-          filter: { type: "bandpass", freq: 700 + (code % 5) * 350, q: 3 },
-        });
-        t += 0.085;
+  // Background loops. `levels` maps loop name -> volume; loops not listed fade out.
+  setAmbience(levels) {
+    if (!this.ctx) return;
+    for (const name of LOOPS) {
+      const want = levels[name] ?? 0;
+      let loop = this.loops[name];
+      if (!loop && want > 0 && this.buffers[name]?.length) {
+        const source = this.ctx.createBufferSource();
+        source.buffer = this.buffers[name][0];
+        source.loop = true;
+        // skip the mp3 encoder's silent padding so the loop doesn't click
+        source.loopStart = 0.05;
+        source.loopEnd = source.buffer.duration - 0.05;
+        const gain = this.ctx.createGain();
+        gain.gain.value = 0;
+        const panner = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
+        source.connect(gain);
+        if (panner) gain.connect(panner).connect(this.master);
+        else gain.connect(this.master);
+        source.start(0, 0.05);
+        loop = this.loops[name] = { source, gain, panner };
       }
-      t += 0.06;
-    });
-  }
-
-  scream(pitch, pan, vol) {
-    if (!this.ready) return;
-    const t = this.ctx.currentTime;
-    const ch = this.channel(pan, vol);
-    const osc = this.ctx.createOscillator();
-    osc.type = "sawtooth";
-    osc.frequency.setValueAtTime(pitch * 1.8, t);
-    osc.frequency.linearRampToValueAtTime(pitch * 2.7, t + 0.15);
-    osc.frequency.linearRampToValueAtTime(pitch * 2.4, t + 0.6);
-    osc.frequency.exponentialRampToValueAtTime(pitch * 1.4, t + 0.95);
-    this.wobble(osc.frequency, t, 0.95, 9, pitch * 0.08);
-    const g = this.ctx.createGain();
-    this.envelope(g.gain, t, 0.9, 0.03, 0.95);
-    osc.connect(this.filter("bandpass", 1400, 1.2)).connect(this.filter("lowpass", 3500)).connect(g).connect(ch);
-    osc.start(t);
-    osc.stop(t + 1);
-    this.noise(ch, t, 0.9, { type: "bandpass", freq: 2000, gain: 0.15, attack: 0.03 });
-  }
-
-  // --- Bruno ---
-
-  pounce(pan) {
-    if (!this.ready) return;
-    const t = this.ctx.currentTime;
-    const ch = this.channel(pan);
-    this.noise(ch, t, 0.25, { type: "bandpass", freq: 300, freqEnd: 2500, q: 1.5, gain: 0.5, attack: 0.03 });
-    this.growl(ch, t, 0.5, 110, 75, 0.5);
-  }
-
-  // The tussle: snarling the whole time, with chomps and crunches on top.
-  eat(pan) {
-    if (!this.ready) return;
-    const t = this.ctx.currentTime;
-    const dur = Bruno.TUSSLE_TIME;
-    const ch = this.channel(pan);
-    this.growl(ch, t, dur - 0.05, 85, 70, 0.4);
-    this.growl(ch, t + 0.45, 0.4, 130, 90, 0.45);
-    this.growl(ch, t + 1.1, 0.35, 120, 85, 0.4);
-    for (let c = t + 0.05; c < t + dur - 0.15; c += rand(0.14, 0.28)) this.chomp(ch, c);
-  }
-
-  chomp(ch, t) {
-    this.tone(ch, t, 0.09, { freq: 140, freqEnd: 50, gain: 0.6 });
-    this.noise(ch, t, 0.05, { type: "lowpass", freq: 900, gain: 0.5 });
-    let c = t + 0.01;
-    for (let i = 0; i < 4; i++) {
-      this.noise(ch, c, 0.018, { type: "bandpass", freq: rand(1800, 4000), q: 1.5, gain: 0.35 });
-      c += rand(0.008, 0.018);
+      if (loop) loop.gain.gain.setTargetAtTime(want, this.ctx.currentTime, 0.4);
     }
-    this.noise(ch, t + 0.03, 0.08, { type: "bandpass", freq: 700, freqEnd: 300, q: 3, gain: 0.25 });
   }
 
-  // Three big wet licks, then a satisfied "Mmm".
-  lick(pan) {
-    if (!this.ready) return;
-    const t = this.ctx.currentTime;
-    const ch = this.channel(pan);
-    for (let i = 0; i < 3; i++) {
-      const s = t + 0.1 + i * 0.28;
-      this.noise(ch, s, 0.2, { type: "bandpass", freq: 700, freqEnd: 2600, q: 5, gain: 0.5, attack: 0.04 });
-      this.noise(ch, s + 0.19, 0.03, { type: "highpass", freq: 3500, gain: 0.25 });
-    }
-    this.tone(ch, t + 0.95, 0.6, {
-      type: "triangle",
-      freq: 140,
-      freqEnd: 175,
-      gain: 0.35,
-      attack: 0.08,
-      filter: { type: "lowpass", freq: 500 },
-      vibrato: { rate: 6, depth: 4 },
-    });
-  }
-
-  // --- Ambience: wind all the time, birds now and then ---
-
-  startAmbient() {
-    const ctx = this.ctx;
-    const wind = ctx.createBufferSource();
-    wind.buffer = this.noiseBuffer;
-    wind.loop = true;
-    const low = this.filter("lowpass", 500, 0.5);
-    const windGain = ctx.createGain();
-    windGain.gain.value = 0.035;
-    wind.connect(low).connect(windGain).connect(this.master);
-
-    const gust = ctx.createBufferSource();
-    gust.buffer = this.noiseBuffer;
-    gust.loop = true;
-    const whistle = this.filter("bandpass", 900, 0.7);
-    const gustGain = ctx.createGain();
-    gustGain.gain.value = 0.012;
-    gust.connect(whistle).connect(gustGain).connect(this.master);
-
-    const t = ctx.currentTime;
-    this.wobble(windGain.gain, t, 1e6, 0.08, 0.02);
-    this.wobble(low.frequency, t, 1e6, 0.05, 250);
-    this.wobble(gustGain.gain, t, 1e6, 0.13, 0.011);
-    this.wobble(whistle.frequency, t, 1e6, 0.07, 300);
-    wind.start(t);
-    gust.start(t, 0.7);
-    this.nextBird = t + rand(0.5, 2);
-  }
-
-  updateAmbient() {
-    if (!this.ready || this.ctx.currentTime < this.nextBird) return;
-    this.bird();
-    this.nextBird = this.ctx.currentTime + rand(1.5, 5);
-  }
-
-  bird() {
-    const t = this.ctx.currentTime;
-    const vol = rand(0.03, 0.07);
-    const ch = this.channel(rand(-0.9, 0.9));
-    const kind = Math.floor(Math.random() * 3);
-    if (kind === 0) {
-      const n = 2 + Math.floor(Math.random() * 4);
-      for (let i = 0; i < n; i++) {
-        this.tone(ch, t + i * 0.09, 0.06, { freq: rand(3200, 4200), freqEnd: rand(4500, 5500), gain: vol });
-      }
-    } else if (kind === 1) {
-      this.tone(ch, t, 0.35, { freq: 2600, freqEnd: 1900, gain: vol, vibrato: { rate: 28, depth: 120 } });
-      this.tone(ch, t + 0.4, 0.25, { freq: 2000, freqEnd: 2600, gain: vol });
-    } else {
-      this.tone(ch, t, 0.6, { freq: rand(3500, 4200), gain: vol * 0.8, attack: 0.05, vibrato: { rate: 35, depth: 400 } });
-    }
+  panLoop(name, pan) {
+    const loop = this.loops[name];
+    if (loop?.panner) loop.panner.pan.setTargetAtTime(clamp(pan, -1, 1), this.ctx.currentTime, 0.1);
   }
 }
 
-const BRUNO_STRIDE = { [Gait.SNEAK]: 22, [Gait.WALK]: 38, [Gait.RUN]: 52 };
-const WALK_STRIDE = 24;
-const FLEE_STRIDE = 48;
+const BRUNO_STRIDE = { [Gait.SNEAK]: 26, [Gait.WALK]: 40, [Gait.RUN]: 54 };
+const BRUNO_STEP_VOLUME = { [Gait.SNEAK]: 0.12, [Gait.WALK]: 0.45, [Gait.RUN]: 0.8 };
+const WALK_STRIDE = 30;
+const FLEE_STRIDE = 50;
 const panFor = (x) => clamp((x - WIDTH / 2) / (WIDTH * 0.6), -1, 1);
 
 export class SoundDirector {
   constructor(sound) {
     this.sound = sound;
     this.level = null;
+  }
+
+  // Background sound for whatever level is on screen (call every frame).
+  ambience(level) {
+    const s = this.sound;
+    if (!level.dark) {
+      s.setAmbience({ amb_day: 0.45 });
+      return;
+    }
+    // Night: crickets everywhere, and the campfire crackles louder as Bruno gets closer.
+    const fire = level.lights[0];
+    const near = fire ? clamp(1 - level.bruno.pos.dist(fire.pos) / 700, 0.08, 1) : 0;
+    s.setAmbience({ amb_crickets: 0.35, amb_campfire: 0.6 * near });
+    if (fire) s.panLoop("amb_campfire", panFor(fire.pos.x) - panFor(level.bruno.pos.x));
   }
 
   // Call once per frame while the level is being played.
@@ -367,17 +212,24 @@ export class SoundDirector {
     const bruno = level.bruno;
     const pan = panFor(bruno.pos.x);
 
+    for (const ev of level.events) {
+      if (ev.type === "twig") s.play("twig", { vol: 1, pan: panFor(ev.pos.x) });
+      else if (ev.type === "growl") s.play("growl", { vol: 1, pan });
+    }
+    level.events.length = 0;
+
     if (bruno.state !== this.brunoState) {
-      if (bruno.state === BearState.POUNCING) s.pounce(pan);
-      else if (bruno.state === BearState.TUSSLING) s.eat(pan);
-      else if (bruno.state === BearState.LICKING) s.lick(pan);
+      if (bruno.state === BearState.POUNCING) s.play("pounce", { vol: 0.9, pan });
+      else if (bruno.state === BearState.TUSSLING) this.eat(pan);
+      else if (bruno.state === BearState.LICKING) this.lick(pan);
       this.brunoState = bruno.state;
     }
     if (bruno.state === BearState.FREE && bruno.moving) {
       this.stride += bruno.pos.dist(this.lastPos);
       if (this.stride >= BRUNO_STRIDE[bruno.gait]) {
         this.stride = 0;
-        s.brunoStep(bruno.gait, Boolean(bruno.hidingIn(level.blockers)), pan);
+        s.play("bruno_step", { vol: BRUNO_STEP_VOLUME[bruno.gait], pan, rate: rand(0.75, 0.85) });
+        if (bruno.hidingIn(level.blockers) && bruno.gait !== Gait.SNEAK) s.play("rustle", { vol: 0.5, pan });
       }
     }
     this.lastPos = bruno.pos;
@@ -388,11 +240,11 @@ export class SoundDirector {
         rec = { speechTimer: p.speechTimer, pos: p.pos, stride: 0 };
         this.people.set(p, rec);
       }
-      const vol = clamp(1.2 - p.pos.dist(bruno.pos) / 900, 0.3, 1);
+      const vol = clamp(1.15 - p.pos.dist(bruno.pos) / 900, 0.3, 1);
       const personPan = panFor(p.pos.x);
       if (p.speechTimer > rec.speechTimer + 0.01) {
-        if (p.state === PersonState.FLEE) s.scream(p.voice, personPan, vol);
-        else s.babble(p.speech, p.voice, personPan, vol);
+        const groups = VOICES[p.voice]?.[p.speechKind] ?? [];
+        if (groups.length) s.play(choice(groups), { vol: 0.85 * vol, pan: personPan, rate: rand(0.97, 1.03) });
       }
       rec.speechTimer = p.speechTimer;
       if (p.catchable) {
@@ -400,10 +252,27 @@ export class SoundDirector {
         const fleeing = p.state === PersonState.FLEE;
         if (rec.stride >= (fleeing ? FLEE_STRIDE : WALK_STRIDE)) {
           rec.stride = 0;
-          s.personStep(fleeing, personPan, vol);
+          s.play(fleeing ? "run" : "step", { vol: (fleeing ? 0.5 : 0.25) * vol, pan: personPan });
         }
       }
       rec.pos = p.pos;
     }
+  }
+
+  // The tussle: Bruno growling and chomping, with crunches on top.
+  eat(pan) {
+    const s = this.sound;
+    s.play("eat", { vol: 1, pan, rate: 1 });
+    for (let t = 0.15; t < Bruno.TUSSLE_TIME - 0.3; t += rand(0.35, 0.6)) {
+      s.play("crunch", { vol: 0.55, pan, delay: t });
+    }
+  }
+
+  // Afterwards: licks, a lip smack, then a happy "Mmm".
+  lick(pan) {
+    const s = this.sound;
+    const lickTime = s.play("lick", { vol: 0.9, pan, rate: 1 }) || 1.4;
+    s.play("smack", { vol: 0.8, pan, delay: lickTime });
+    s.play("mmm", { vol: 0.95, pan, delay: lickTime + 0.35, rate: rand(0.97, 1.03) });
   }
 }

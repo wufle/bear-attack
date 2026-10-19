@@ -28,8 +28,12 @@ addEventListener("resize", resize);
 resize();
 
 const input = new Input(canvas, (x, y) => new Vec((x - view.ox) / view.scale, (y - view.oy) / view.scale));
-const background = makeBackground();
+const backgrounds = {};
+const backgroundFor = (lvl) => (backgrounds[lvl.ground] ??= makeBackground(lvl.ground));
 const buttons = {
+  growl: document.getElementById("btn-growl"),
+  prev: document.getElementById("btn-prev"),
+  next: document.getElementById("btn-next"),
   sneak: document.getElementById("btn-sneak"),
   sprint: document.getElementById("btn-sprint"),
   fullscreen: document.getElementById("btn-fullscreen"),
@@ -46,7 +50,24 @@ for (const type of ["pointerdown", "pointerup", "touchend", "keydown"]) {
   addEventListener(type, () => sound.unlock(), { capture: true });
 }
 
-let levelIndex = 0;
+// Remember how far the player has got, so they can pick any level they've reached.
+const PROGRESS_KEY = "bear-attack-unlocked";
+let unlocked = 0;
+try {
+  unlocked = Math.min(LEVELS.length - 1, Math.max(0, parseInt(localStorage.getItem(PROGRESS_KEY), 10) || 0));
+} catch {
+  // no storage - everyone starts at level 1
+}
+function unlock(index) {
+  unlocked = Math.max(unlocked, Math.min(index, LEVELS.length - 1));
+  try {
+    localStorage.setItem(PROGRESS_KEY, String(unlocked));
+  } catch {
+    // progress just won't be saved
+  }
+}
+
+let levelIndex = unlocked;
 let level = LEVELS[levelIndex]();
 let mode = "intro"; // intro | playing | paused | won | escaped
 let modeTime = 0;
@@ -57,6 +78,12 @@ function setMode(next) {
   mode = next;
   modeTime = 0;
   if ((mode === "paused") !== sound.paused) sound.setPaused(mode === "paused");
+}
+
+function goToLevel(index) {
+  levelIndex = index;
+  level = LEVELS[levelIndex]();
+  setMode("intro");
 }
 
 async function toggleFullscreen() {
@@ -84,17 +111,24 @@ function handleEvents() {
     } else if (ev.type === "restart") {
       level = LEVELS[levelIndex]();
       setMode("playing");
+    } else if ((ev.type === "pick" || ev.type === "step-level") && mode !== "playing") {
+      const index = ev.type === "pick" ? ev.index : levelIndex + ev.by;
+      if (index >= 0 && index <= unlocked) goToLevel(index);
     } else if (mode === "playing") {
       if (ev.type === "pounce") level.bruno.pounce(ev.at ? ev.at.sub(level.bruno.pos) : null);
+      else if (ev.type === "growl") level.growl();
       else if (ev.type === "pause") setMode("paused");
     } else if (modeTime < CARD_INPUT_DELAY) {
       continue;
     } else if (mode === "paused") {
       if (["pause", "pounce", "confirm"].includes(ev.type)) setMode("playing");
     } else if (ev.type === "pounce" || ev.type === "confirm") {
-      if (mode === "won") levelIndex = (levelIndex + 1) % LEVELS.length;
-      if (mode !== "intro") level = LEVELS[levelIndex]();
-      setMode("playing");
+      if (mode === "won") {
+        goToLevel((levelIndex + 1) % LEVELS.length);
+      } else {
+        if (mode !== "intro") level = LEVELS[levelIndex]();
+        setMode("playing");
+      }
     }
   }
 }
@@ -102,7 +136,8 @@ function handleEvents() {
 function drawCards() {
   const tap = input.touchMode ? "Tap" : "Click or press Space";
   if (mode === "intro") {
-    drawCard(ctx, `Level ${level.number}: ${level.title}`, level.intro, `${tap} to start`);
+    const pick = unlocked > 0 ? (input.touchMode ? "  ·  ◀ ▶ change level" : `  ·  keys 1-${unlocked + 1} change level`) : "";
+    drawCard(ctx, `Level ${level.number}: ${level.title}`, level.intro, `${tap} to start${pick}`, level.tip);
   } else if (mode === "paused") {
     drawCard(ctx, "Paused", "Bruno is taking a little nap.", `${tap} to keep playing`);
   } else if (mode === "won") {
@@ -127,7 +162,7 @@ function draw() {
   ctx.beginPath();
   ctx.rect(0, 0, WIDTH, HEIGHT);
   ctx.clip();
-  drawScene(ctx, background, level, t);
+  drawScene(ctx, backgroundFor(level), level, t);
   drawHud(ctx, level, input.touchMode, {
     left: input.touchMode ? cornerInset() : 0,
     right: buttons.fullscreen.hidden ? 0 : cornerInset(),
@@ -147,9 +182,15 @@ function frame(now) {
   if (mode === "playing") {
     level.update(dt, move, gait);
     director.update(level);
-    if (level.outcome) setMode(level.outcome);
+    if (level.outcome) {
+      if (level.outcome === "won") unlock(levelIndex + 1);
+      setMode(level.outcome);
+    }
   }
-  sound.updateAmbient();
+  director.ambience(level);
+  buttons.growl.hidden = !level.canGrowl;
+  buttons.prev.hidden = mode !== "intro" || levelIndex === 0;
+  buttons.next.hidden = mode !== "intro" || levelIndex >= unlocked;
   buttons.sneak.classList.toggle("on", input.sneakToggle);
   buttons.sprint.classList.toggle("on", input.sprintToggle);
   draw();

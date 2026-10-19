@@ -84,6 +84,24 @@ body.touch #touch-ui {
   right: calc(env(safe-area-inset-right) + 144px);
   bottom: calc(env(safe-area-inset-bottom) + 24px);
 }
+#btn-growl {
+  right: calc(env(safe-area-inset-right) + 140px);
+  bottom: calc(env(safe-area-inset-bottom) + 112px);
+}
+#btn-prev,
+#btn-next {
+  bottom: calc(env(safe-area-inset-bottom) + 24px);
+  width: 64px;
+  height: 64px;
+  font-size: 26px;
+  z-index: 2;
+}
+#btn-prev {
+  left: calc(50% - 90px);
+}
+#btn-next {
+  left: calc(50% + 26px);
+}
 #btn-sprint {
   right: calc(env(safe-area-inset-right) + 46px);
   bottom: calc(env(safe-area-inset-bottom) + 144px);
@@ -100,9 +118,11 @@ body.touch #touch-ui {
   border: 2px solid rgba(255, 255, 255, 0.35);
   background: rgba(255, 255, 255, 0.1);
   pointer-events: none;
+  opacity: 0.4; /* faint while resting, so it doesn't hide Bruno */
 }
 #stick.active {
   bottom: auto;
+  opacity: 1;
   border-color: rgba(255, 255, 255, 0.6);
 }
 #knob {

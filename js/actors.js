@@ -83,8 +83,11 @@ export class Bruno {
   static POUNCE_TIME = 0.22;
   static POUNCE_NOISE = 220;
   static POUNCE_COOLDOWN = 0.7;
-  static TUSSLE_TIME = 1.8;
-  static LICK_TIME = 1.6;
+  static TUSSLE_TIME = 2.2; // matches the eating sound
+  static TUSSLE_NOISE = 250; // people nearby hear the commotion
+  static LICK_TIME = 3.2; // licks, a lip smack, then "Mmm"
+  static GROWL_RADIUS = 420;
+  static GROWL_COOLDOWN = 3;
 
   constructor(pos) {
     this.pos = pos;
@@ -94,11 +97,13 @@ export class Bruno {
     this.state = BearState.FREE;
     this.timer = 0;
     this.cooldown = 0;
+    this.growlCooldown = 0;
     this.victim = null;
   }
 
   get noiseRadius() {
     if (this.state === BearState.POUNCING) return Bruno.POUNCE_NOISE;
+    if (this.state === BearState.TUSSLING) return Bruno.TUSSLE_NOISE;
     if (this.state !== BearState.FREE || !this.moving) return 0;
     return Bruno.NOISE[this.gait];
   }
@@ -115,8 +120,16 @@ export class Bruno {
     this.timer = Bruno.POUNCE_TIME;
   }
 
+  // Returns true if Bruno growled (he can't while busy, or too soon after the last one).
+  growl() {
+    if (this.state !== BearState.FREE || this.growlCooldown > 0) return false;
+    this.growlCooldown = Bruno.GROWL_COOLDOWN;
+    return true;
+  }
+
   update(dt, move, gait, bounds, people, blockers) {
     this.cooldown = Math.max(0, this.cooldown - dt);
+    this.growlCooldown = Math.max(0, this.growlCooldown - dt);
 
     if (this.state === BearState.FREE) {
       this.gait = gait;
@@ -168,6 +181,7 @@ const SUSPICIOUS_AT = 0.35;
 const CALM_AT = 0.12;
 
 const HUH_LINES = ["Huh?", "Hello…?", "What was that?", "Is someone there?"];
+const GROWL_LINES = ["What was that noise?", "Here, puppy puppy?", "Is that a doggy?", "Hello? Who's there?"];
 const RUSTLE_LINES = ["Did that bush just move?", "Bushes don't walk…", "Weird bush."];
 const CALM_LINES = ["Must've been the wind.", "Oh well!", "Probably a squirrel."];
 
@@ -184,10 +198,13 @@ export class Person {
     this.hearing = opts.hearing ?? 1.0;
     this.turnSpeed = opts.turnSpeed ?? 2.5;
     this.pause = opts.pause ?? [2.5, 5.0];
+    this.pauses = opts.pauses ?? []; // per-stop override: pauses[i] = [min, max] seconds at route[i]
+    this.lookRange = opts.lookRange ?? 1.6; // how far they turn when looking around (radians)
+    this.nightVision = opts.nightVision ?? 90; // how far they see in the dark
     this.idleLines = opts.idleLines ?? [];
     this.shirt = opts.shirt ?? "#f078a0";
     this.hair = opts.hair ?? "#e6be5a";
-    this.voice = opts.voice ?? 260; // babble pitch in Hz: kids high, grown-ups lower
+    this.voice = opts.voice ?? "man"; // kid | man | woman - picks which voice clips play
 
     this.angle = 0;
     this.state = PersonState.WANDER;
@@ -198,7 +215,9 @@ export class Person {
     this.lookTimer = 0;
     this.lookTarget = 0;
     this.speech = "";
+    this.speechKind = "idle";
     this.speechTimer = 0;
+    this.lureTarget = null;
   }
 
   get facing() { return Vec.fromAngle(this.angle); }
@@ -211,22 +230,30 @@ export class Person {
     return this.state === PersonState.WANDER || this.state === PersonState.INVESTIGATE;
   }
 
-  say(text, duration = 2.2) {
+  // `kind` (idle | huh | rustle | calm | scream) decides which voice clip plays.
+  say(text, kind = "idle", duration = 2.2) {
     this.speech = text;
+    this.speechKind = kind;
     this.speechTimer = duration;
   }
 
   spot(line = "BEAR!!!") {
     this.suspicion = 1;
     this.state = PersonState.FLEE;
-    this.say(line, 3.0);
+    this.lureTarget = null;
+    this.say(line, "scream", 3.0);
+  }
+
+  // How far this person can see Bruno right now: not far in the dark, unless he's in the light.
+  sightRange(env) {
+    return env.dark && !env.brunoLit ? this.nightVision : this.viewDistance;
   }
 
   // "clear" if Bruno is in plain view, "rustle" if the bush he's in is shaking, else null.
-  canSee(bruno, blockers) {
+  canSee(bruno, blockers, env) {
     const to = bruno.pos.sub(this.pos);
     const dist = to.length;
-    if (dist > this.viewDistance + Bruno.RADIUS) return null;
+    if (dist > this.sightRange(env) + Bruno.RADIUS) return null;
     if (dist > 1 && Math.abs(wrapAngle(to.angle - this.angle)) > this.viewAngle / 2) return null;
     const hidingIn = bruno.hidingIn(blockers);
     for (const b of blockers) {
@@ -238,7 +265,8 @@ export class Person {
   }
 
   // Advance one frame. Returns true on the frame this person spots Bruno.
-  update(dt, bruno, blockers, bounds) {
+  // `env` describes the level this frame: { dark, brunoLit, noises: [{pos, radius, strength}], lure }.
+  update(dt, bruno, blockers, bounds, env) {
     this.speechTimer -= dt;
     if (!this.catchable) return false;
 
@@ -254,16 +282,37 @@ export class Person {
 
     let noticed = false;
     const dist = this.pos.dist(bruno.pos);
-    const sight = this.canSee(bruno, blockers);
+    const sight = this.canSee(bruno, blockers, env);
     if (sight === "clear") {
       if (bruno.state === BearState.TUSSLING || bruno.state === BearState.LICKING) this.suspicion = 1;
-      const closeness = 1 - Math.min(dist / this.viewDistance, 1);
+      const closeness = 1 - Math.min(dist / this.sightRange(env), 1);
       this.suspicion += dt * (0.5 + 2.0 * closeness);
       noticed = true;
     } else if (sight === "rustle") {
       this.suspicion += dt * 0.3;
       noticed = true;
-      if (this.speechTimer <= 0 && this.suspicion > 0.2) this.say(choice(RUSTLE_LINES));
+      if (this.speechTimer <= 0 && this.suspicion > 0.2) this.say(choice(RUSTLE_LINES), "rustle");
+    }
+
+    // One-off noises, like a twig snapping under Bruno's paw.
+    for (const noise of env.noises) {
+      const d = this.pos.dist(noise.pos);
+      if (d < noise.radius) {
+        // Any snap they can hear makes them stop and look; a close one is worse.
+        this.suspicion = Math.max(this.suspicion + noise.strength * (1 - d / noise.radius), SUSPICIOUS_AT + 0.05);
+        this.interest = noise.pos;
+        noticed = true;
+      }
+    }
+
+    // A growl lures people over to see what made it.
+    if (env.lure && this.pos.dist(env.lure) < Bruno.GROWL_RADIUS) {
+      this.lureTarget = env.lure;
+      this.interest = env.lure;
+      this.suspicion = Math.max(this.suspicion, SUSPICIOUS_AT + 0.1);
+      this.state = PersonState.INVESTIGATE;
+      this.say(choice(GROWL_LINES), "huh");
+      noticed = true;
     }
 
     const hearingRange = bruno.noiseRadius * this.hearing;
@@ -274,9 +323,9 @@ export class Person {
     }
 
     if (noticed) {
-      this.interest = bruno.pos;
+      if (sight || dist < hearingRange) this.interest = bruno.pos;
       this.quietTime = 0;
-    } else {
+    } else if (!this.lureTarget) {
       this.quietTime += dt;
       if (this.quietTime > 1.5) this.suspicion -= dt * 0.15;
     }
@@ -288,14 +337,24 @@ export class Person {
     }
     if (this.state === PersonState.WANDER && this.suspicion >= SUSPICIOUS_AT) {
       this.state = PersonState.INVESTIGATE;
-      if (this.speechTimer <= 0) this.say(choice(HUH_LINES));
+      if (this.speechTimer <= 0) this.say(choice(HUH_LINES), "huh");
     } else if (this.state === PersonState.INVESTIGATE && this.suspicion < CALM_AT) {
       this.state = PersonState.WANDER;
-      this.say(choice(CALM_LINES));
+      this.say(choice(CALM_LINES), "calm");
     }
 
     if (this.state === PersonState.INVESTIGATE) {
-      if (this.interest) this.turnToward(this.interest.sub(this.pos).angle, dt);
+      if (this.lureTarget) {
+        const to = this.lureTarget.sub(this.pos);
+        if (to.length < 50) {
+          this.lureTarget = null; // got there, nothing to see... yet
+        } else {
+          this.turnToward(to.angle, dt);
+          this.pos = this.pos.add(to.normalize().scale(this.walkSpeed * dt));
+        }
+      } else if (this.interest) {
+        this.turnToward(this.interest.sub(this.pos).angle, dt);
+      }
     } else {
       this.wander(dt);
     }
@@ -308,7 +367,7 @@ export class Person {
       this.pauseTimer -= dt;
       this.lookTimer -= dt;
       if (this.lookTimer <= 0) {
-        this.lookTarget = this.angle + rand(-1.6, 1.6);
+        this.lookTarget = this.angle + rand(-this.lookRange, this.lookRange);
         this.lookTimer = rand(0.8, 1.6);
       }
       this.turnToward(this.lookTarget, dt);
@@ -317,10 +376,10 @@ export class Person {
     const target = this.route[this.routeIndex];
     const to = target.sub(this.pos);
     if (to.length < 4) {
+      this.pauseTimer = rand(...(this.pauses[this.routeIndex] ?? this.pause));
       this.routeIndex = (this.routeIndex + 1) % this.route.length;
-      this.pauseTimer = rand(...this.pause);
       this.lookTimer = 0;
-      if (this.idleLines.length && Math.random() < 0.5) this.say(choice(this.idleLines));
+      if (this.idleLines.length && Math.random() < 0.5) this.say(choice(this.idleLines), "idle");
       return;
     }
     this.turnToward(to.angle, dt);

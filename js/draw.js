@@ -4,8 +4,11 @@
 import { BearState, Bruno, Gait, PersonState, Vec } from "./actors.js";
 import { HEIGHT, WIDTH } from "./level.js";
 
-const GRASS = "#629c48";
-const GRASS_DARK = "#528a3e";
+const GROUNDS = {
+  meadow: { grass: "#629c48", tufts: "#528a3e", flowers: ["#ffffff", "#ffdc50", "#f08cc8"], flowerCount: 70 },
+  forest: { grass: "#4f8a3c", tufts: "#3f7330", flowers: ["#e8d8a0", "#c86a3c"], flowerCount: 25 },
+  night: { grass: "#4a7a3c", tufts: "#3c6830", flowers: ["#ffffff"], flowerCount: 20 },
+};
 const BUSH = "#2c6834";
 const BUSH_LIGHT = "#428444";
 const TRUNK = "#6e4e30";
@@ -45,16 +48,17 @@ function circle(ctx, pos, r, color) {
   ctx.fill();
 }
 
-export function makeBackground(resolution = 2) {
+export function makeBackground(ground = "meadow", resolution = 2) {
+  const { grass, tufts, flowers, flowerCount } = GROUNDS[ground];
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH * resolution;
   canvas.height = HEIGHT * resolution;
   const ctx = canvas.getContext("2d");
   ctx.scale(resolution, resolution);
   const rng = seeded(1);
-  ctx.fillStyle = GRASS;
+  ctx.fillStyle = grass;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
-  ctx.strokeStyle = GRASS_DARK;
+  ctx.strokeStyle = tufts;
   ctx.lineWidth = 2;
   ctx.lineCap = "round";
   for (let i = 0; i < 900; i++) {
@@ -65,9 +69,8 @@ export function makeBackground(resolution = 2) {
     ctx.lineTo(x + (rng() * 4 - 2), y - 4 - rng() * 4);
     ctx.stroke();
   }
-  const flowers = ["#ffffff", "#ffdc50", "#f08cc8"];
-  for (let i = 0; i < 70; i++) {
-    circle(ctx, new Vec(rng() * WIDTH, rng() * HEIGHT), 3, flowers[Math.floor(rng() * 3)]);
+  for (let i = 0; i < flowerCount; i++) {
+    circle(ctx, new Vec(rng() * WIDTH, rng() * HEIGHT), 3, flowers[Math.floor(rng() * flowers.length)]);
   }
   return canvas;
 }
@@ -85,14 +88,169 @@ function drawBlanket(ctx, rect) {
   ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
 }
 
-function drawCones(ctx, people) {
+function drawTrail(ctx, points) {
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  for (const [width, color] of [[50, "#8a6a44"], [40, "#b8956a"]]) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    points.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+    ctx.stroke();
+  }
+}
+
+function drawLog(ctx, pos, angle, length = 80) {
+  ctx.save();
+  ctx.translate(pos.x, pos.y);
+  ctx.rotate(angle);
+  ctx.fillStyle = "#6e4a2a";
+  ctx.beginPath();
+  ctx.roundRect(-length / 2, -11, length, 22, 10);
+  ctx.fill();
+  ctx.strokeStyle = "#4e321a";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  circle(ctx, new Vec(length / 2 - 4, 0), 9, "#c8a070");
+  ctx.restore();
+}
+
+function drawFire(ctx, pos, t) {
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    circle(ctx, pos.add(new Vec(Math.cos(a), Math.sin(a)).scale(30)), 8, "#8a8a8a");
+  }
+  drawLog(ctx, pos, 0.6, 50);
+  drawLog(ctx, pos, -0.6, 50);
+  const flicker = (k) => 1 + 0.15 * Math.sin(t * (9 + k) + k * 2);
+  circle(ctx, pos, 22 * flicker(1), "#e8541e");
+  circle(ctx, pos.add(new Vec(0, -2)), 15 * flicker(2), "#ffa628");
+  circle(ctx, pos.add(new Vec(0, -4)), 8 * flicker(3), "#fff0a0");
+}
+
+function drawTent(ctx, prop) {
+  const { pos, w, h } = prop;
+  ctx.fillStyle = "#e07b39";
+  ctx.beginPath();
+  ctx.moveTo(pos.x - w / 2, pos.y - h / 2);
+  ctx.lineTo(pos.x + w / 2, pos.y - h / 2);
+  ctx.lineTo(pos.x + w / 2 + 12, pos.y + h / 2);
+  ctx.lineTo(pos.x - w / 2 - 12, pos.y + h / 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#c4602a";
+  ctx.fillRect(pos.x - w / 2, pos.y - 3, w, 6);
+  ctx.fillStyle = "#3a2a1a";
+  ctx.beginPath();
+  ctx.moveTo(pos.x - 14, pos.y + h / 2);
+  ctx.lineTo(pos.x, pos.y + 4);
+  ctx.lineTo(pos.x + 14, pos.y + h / 2);
+  ctx.fill();
+}
+
+function drawWoodpile(ctx, pos) {
+  for (const [dx, dy, a] of [[-10, 8, 0.1], [10, 8, -0.1], [0, -6, 0.05]]) drawLog(ctx, pos.add(new Vec(dx, dy)), a, 60);
+}
+
+function drawProps(ctx, props, t) {
+  for (const prop of props) {
+    if (prop.type === "blanket") drawBlanket(ctx, prop);
+    else if (prop.type === "trail") drawTrail(ctx, prop.points);
+    else if (prop.type === "fire") drawFire(ctx, prop.pos, t);
+    else if (prop.type === "tent") drawTent(ctx, prop);
+    else if (prop.type === "log") drawLog(ctx, prop.pos, prop.angle);
+    else if (prop.type === "woodpile") drawWoodpile(ctx, prop.pos);
+  }
+}
+
+function drawTwigs(ctx, twigs) {
+  ctx.lineCap = "round";
+  for (const { pos, snapped } of twigs) {
+    ctx.strokeStyle = snapped ? "#a08460" : "#5a3c20";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    if (snapped) {
+      ctx.moveTo(pos.x - 12, pos.y + 2);
+      ctx.lineTo(pos.x - 2, pos.y - 3);
+      ctx.moveTo(pos.x + 2, pos.y + 4);
+      ctx.lineTo(pos.x + 12, pos.y);
+    } else {
+      ctx.moveTo(pos.x - 12, pos.y + 4);
+      ctx.lineTo(pos.x + 12, pos.y - 4);
+      ctx.moveTo(pos.x + 2, pos.y - 1);
+      ctx.lineTo(pos.x + 6, pos.y - 9);
+    }
+    ctx.stroke();
+  }
+}
+
+// Night: darken everything except the firelight. Bruno and the people glow
+// faintly so you can still see where they are.
+function drawDarkness(ctx, level, t) {
+  if (!level.dark) return;
+  if (!drawDarkness.canvas) {
+    drawDarkness.canvas = document.createElement("canvas");
+    drawDarkness.canvas.width = WIDTH;
+    drawDarkness.canvas.height = HEIGHT;
+  }
+  const c = drawDarkness.canvas.getContext("2d");
+  c.globalCompositeOperation = "source-over";
+  c.clearRect(0, 0, WIDTH, HEIGHT);
+  c.fillStyle = "rgba(6, 10, 32, 0.84)";
+  c.fillRect(0, 0, WIDTH, HEIGHT);
+  c.globalCompositeOperation = "destination-out";
+  const hole = (pos, radius, strength) => {
+    const g = c.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, radius);
+    g.addColorStop(0, `rgba(0,0,0,${strength})`);
+    g.addColorStop(0.6, `rgba(0,0,0,${strength * 0.8})`);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    c.fillStyle = g;
+    c.beginPath();
+    c.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+    c.fill();
+  };
+  for (const light of level.lights) hole(light.pos, light.radius * (1 + 0.03 * Math.sin(t * 11)), 1);
+  hole(level.bruno.pos, 80, 0.55);
+  for (const p of level.people) if (p.catchable) hole(p.pos, 45, 0.5);
+  ctx.drawImage(drawDarkness.canvas, 0, 0);
+  // warm glow on top of the firelight
+  ctx.globalCompositeOperation = "lighter";
+  for (const light of level.lights) {
+    const g = ctx.createRadialGradient(light.pos.x, light.pos.y, 0, light.pos.x, light.pos.y, light.radius);
+    g.addColorStop(0, "rgba(255,140,40,0.25)");
+    g.addColorStop(1, "rgba(255,140,40,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(light.pos.x, light.pos.y, light.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = "source-over";
+}
+
+function drawGrowl(ctx, fx) {
+  if (!fx) return;
+  const k = fx.age / 0.8;
+  ctx.strokeStyle = `rgba(255,120,80,${0.6 * (1 - k)})`;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(fx.pos.x, fx.pos.y, Bruno.GROWL_RADIUS * k, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.font = font(28);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+  ctx.fillStyle = `rgba(255,200,160,${1 - k})`;
+  ctx.fillText("GRRRR!", fx.pos.x, fx.pos.y - 40 - 20 * k);
+}
+
+function drawCones(ctx, people, dark) {
   for (const p of people) {
     const color = CONE_COLORS[p.state];
     if (!color) continue;
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.moveTo(p.pos.x, p.pos.y);
-    ctx.arc(p.pos.x, p.pos.y, p.viewDistance, p.angle - p.viewAngle / 2, p.angle + p.viewAngle / 2);
+    const range = dark ? p.nightVision : p.viewDistance;
+    ctx.arc(p.pos.x, p.pos.y, range, p.angle - p.viewAngle / 2, p.angle + p.viewAngle / 2);
     ctx.closePath();
     ctx.fill();
   }
@@ -234,8 +392,9 @@ function drawTussle(ctx, pos, t) {
 
 export function drawScene(ctx, background, level, t) {
   ctx.drawImage(background, 0, 0, WIDTH, HEIGHT);
-  for (const rect of level.blankets) drawBlanket(ctx, rect);
-  drawCones(ctx, level.people);
+  drawProps(ctx, level.props, t);
+  drawTwigs(ctx, level.twigs);
+  drawCones(ctx, level.people, level.dark);
   for (const b of level.blockers) if (b.solid) circle(ctx, b.pos, b.solid, TRUNK);
   drawNoise(ctx, level.bruno);
   for (const p of level.people) drawPerson(ctx, p);
@@ -243,7 +402,9 @@ export function drawScene(ctx, background, level, t) {
   const hidingIn = level.bruno.hidingIn(level.blockers);
   for (const b of level.blockers) if (b.hideable) drawBush(ctx, b, b === hidingIn);
   for (const b of level.blockers) if (!b.hideable) drawCanopy(ctx, b);
+  drawDarkness(ctx, level, t);
   if (level.bruno.state === BearState.TUSSLING) drawTussle(ctx, level.bruno.pos, t);
+  drawGrowl(ctx, level.growlFx);
   for (const p of level.people) {
     drawMeter(ctx, p);
     drawSpeech(ctx, p);
@@ -276,20 +437,21 @@ export function drawHud(ctx, level, touch, inset) {
 
   if (!touch) {
     ctx.textBaseline = "bottom";
-    ctx.font = font(20);
+    ctx.font = font(19);
+    const growl = level.canGrowl ? " · Right-click/G growl" : "";
     shadowed(
-      "WASD move · Shift sneak · Ctrl or double-tap W sprint · Click/Space pounce · Esc pause · R restart · M sound",
+      `WASD move · Shift sneak · Ctrl/double-tap W sprint · Click/Space pounce${growl} · Esc pause · R restart · M sound`,
       18, HEIGHT - 12, "left",
     );
   }
 }
 
-export function drawCard(ctx, heading, body, prompt) {
+export function drawCard(ctx, heading, body, prompt, tip = null) {
   ctx.fillStyle = "rgba(0,0,0,0.6)";
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  let y = HEIGHT / 2 - 110;
+  let y = HEIGHT / 2 - (tip ? 160 : 110);
   ctx.font = font(72);
   ctx.fillStyle = "#ffdc78";
   ctx.fillText(heading, WIDTH / 2, y);
@@ -299,6 +461,15 @@ export function drawCard(ctx, heading, body, prompt) {
   for (const line of wrap(ctx, body, WIDTH - 300)) {
     ctx.fillText(line, WIDTH / 2, y);
     y += 40;
+  }
+  if (tip) {
+    y += 16;
+    ctx.font = font(26);
+    ctx.fillStyle = "#9fe08a";
+    for (const line of wrap(ctx, tip, WIDTH - 340)) {
+      ctx.fillText(line, WIDTH / 2, y);
+      y += 34;
+    }
   }
   ctx.font = font(24);
   ctx.fillStyle = "#c8c8c8";
