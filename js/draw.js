@@ -909,29 +909,26 @@ export function drawCard(ctx, heading, body, prompt, tip = null) {
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  let y = HEIGHT / 2 - (tip ? 160 : 110);
+  let y = HEIGHT / 2 - (tip ? 120 : 90);
   ctx.font = font(72);
   ctx.fillStyle = "#ffdc78";
   ctx.fillText(heading, WIDTH / 2, y);
   y += 84;
+  if (tip) {
+    ctx.font = font(40);
+    ctx.fillStyle = "#9fe08a";
+    ctx.fillText(tip, WIDTH / 2, y);
+    y += 52;
+  }
   ctx.font = font(30);
   ctx.fillStyle = TEXT;
   for (const line of wrap(ctx, body, WIDTH - 300)) {
     ctx.fillText(line, WIDTH / 2, y);
     y += 40;
   }
-  if (tip) {
-    y += 16;
-    ctx.font = font(26);
-    ctx.fillStyle = "#9fe08a";
-    for (const line of wrap(ctx, tip, WIDTH - 340)) {
-      ctx.fillText(line, WIDTH / 2, y);
-      y += 34;
-    }
-  }
   ctx.font = font(24);
   ctx.fillStyle = "#c8c8c8";
-  ctx.fillText(prompt, WIDTH / 2, y + 40);
+  ctx.fillText(prompt, WIDTH / 2, y + 30);
 }
 
 function wrap(ctx, text, width) {

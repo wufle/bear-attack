@@ -246,7 +246,7 @@ function picnic() {
   return new Level({
     number: 1,
     title: "The Picnic",
-    intro: "A kid is having a picnic all alone in Bruno's meadow. Hide in the bushes, sneak up close, and POUNCE!",
+    intro: "Sneak up and POUNCE!",
     bruno: new Bruno(v(70, 620)),
     people: [kid],
     blockers: [
@@ -285,8 +285,8 @@ function hiker() {
   return new Level({
     number: 2,
     title: "The Hiker",
-    intro: "A hiker is walking the forest trail. He stops to look all around - even behind him! Grown-ups are faster than kids, so don't get seen.",
-    tip: "NEW: Twigs! They SNAP if you walk or run on them. Sneak (Shift) over them quietly.",
+    intro: "Sneak over twigs - they SNAP!",
+    tip: "NEW: Twigs!",
     bruno: new Bruno(v(80, 640)),
     people: [hikerPerson],
     ground: "forest",
@@ -335,8 +335,8 @@ function campfire() {
   return new Level({
     number: 3,
     title: "Campfire Night",
-    intro: "Two campers are sitting by the fire. Stay in the dark - they can only see you up close, or if you step into the firelight. Wait for one to wander off!",
-    tip: "NEW: GROWL (G key, right-click, or the Growl button) makes people come and look. Growl from a hiding spot, then pounce!",
+    intro: "Stay out of the firelight.",
+    tip: "NEW: Growl unlocked!",
     bruno: new Bruno(v(80, 650)),
     people: [dad, mum],
     dark: true,
@@ -399,8 +399,8 @@ function fishing() {
   return new Level({
     number: 4,
     title: "Gone Fishin'",
-    intro: "A fisherman is fishing off the dock with his dog. The dog can SMELL you when the wind blows your scent his way - keep out of the purple smell zone!",
-    tip: "NEW: Fish! Press Q (or the Fish button) to throw one. The dog runs off to eat it, and people stop and stare. You have 3.",
+    intro: "The dog can smell you downwind.",
+    tip: "NEW: Fish unlocked!",
     bruno: new Bruno(v(70, 640)),
     people: [fisherman, dog],
     ground: "forest",
@@ -447,8 +447,8 @@ function scouts() {
   return new Level({
     number: 5,
     title: "Scout Troop",
-    intro: "A scout troop is camping in Bruno's woods: five kids and their troop leader. If anyone spots you, everyone nearby runs - catch them one at a time!",
-    tip: "NEW: Grandma disguise! Press C (or the Disguise button). Grown-ups think you're a sweet old granny, but kids aren't fooled. Pouncing makes it fly off!",
+    intro: "Kids aren't fooled by Granny.",
+    tip: "NEW: Granny disguise unlocked!",
     bruno: new Bruno(v(50, 690)),
     people: [
       kid([230, 170], [[320, 140], [300, 230]], { hair: "#e6be5a" }),
@@ -524,8 +524,8 @@ function rangers() {
   return new Level({
     number: 6,
     title: "Ranger Station",
-    intro: "Three park rangers are on night duty: one sweeps a searchlight from the lookout tower, one patrols with a flashlight, one is at the station. Rangers won't fall for Granny - the park is closed!",
-    tip: "NEW: The Queen! Press C to switch disguises. Everyone BOWS the first time they see her - pounce while they're bowing! But her shoes clip-clop, and there's only ONE crown: pounce or run and it's gone.",
+    intro: "Only one crown - don't run!",
+    tip: "NEW: Queen costume unlocked!",
     bruno: new Bruno(v(60, 690)),
     people: [tower, patrol, desk],
     dark: true,
@@ -557,8 +557,8 @@ function cabins() {
   return new Level({
     number: 7,
     title: "Snowy Cabins",
-    intro: "A family is staying at the snowy cabins. Bruno leaves PAW PRINTS in the snow, and anyone who spots them will follow the trail! Ploughed roads don't leave prints.",
-    tip: "NEW: Snowman disguise! Stand still and grown-ups won't notice you - and kids run over to hug a snowman. Don't move while they're looking, and stay away from the fire or you'll melt!",
+    intro: "Watch your paw prints!",
+    tip: "NEW: Snowman costume unlocked!",
     bruno: new Bruno(v(40, 615)),
     people: [
       new Person(v(300, 560), route([300, 560], [300, 380]), {
