@@ -115,13 +115,14 @@ function drawLog(ctx, pos, angle, length = 80) {
   ctx.restore();
 }
 
-function drawFire(ctx, pos, t) {
+function drawFire(ctx, pos, t, lit = true) {
   for (let i = 0; i < 10; i++) {
     const a = (i / 10) * Math.PI * 2;
     circle(ctx, pos.add(new Vec(Math.cos(a), Math.sin(a)).scale(30)), 8, "#8a8a8a");
   }
   drawLog(ctx, pos, 0.6, 50);
   drawLog(ctx, pos, -0.6, 50);
+  if (!lit) return;
   const flicker = (k) => 1 + 0.15 * Math.sin(t * (9 + k) + k * 2);
   circle(ctx, pos, 22 * flicker(1), "#e8541e");
   circle(ctx, pos.add(new Vec(0, -2)), 15 * flicker(2), "#ffa628");
@@ -152,11 +153,83 @@ function drawWoodpile(ctx, pos) {
   for (const [dx, dy, a] of [[-10, 8, 0.1], [10, 8, -0.1], [0, -6, 0.05]]) drawLog(ctx, pos.add(new Vec(dx, dy)), a, 60);
 }
 
+function drawWater(ctx, water, t) {
+  for (const w of water) {
+    ctx.fillStyle = "#c8b48a"; // sandy shore
+    ctx.beginPath();
+    ctx.ellipse(w.cx, w.cy, w.rx + 14, w.ry + 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#3d7ec4";
+    ctx.beginPath();
+    ctx.ellipse(w.cx, w.cy, w.rx, w.ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#4f92d6";
+    ctx.beginPath();
+    ctx.ellipse(w.cx - w.rx * 0.1, w.cy - w.ry * 0.1, w.rx * 0.75, w.ry * 0.7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // little ripples drifting across
+    ctx.strokeStyle = "rgba(255,255,255,0.35)";
+    ctx.lineWidth = 2;
+    const rng = seeded(7);
+    for (let i = 0; i < 14; i++) {
+      const x = w.cx + (rng() - 0.5) * w.rx * 1.4 + Math.sin(t * 0.5 + i) * 6;
+      const y = w.cy + (rng() - 0.5) * w.ry * 1.3;
+      ctx.beginPath();
+      ctx.moveTo(x - 10, y);
+      ctx.quadraticCurveTo(x, y - 4, x + 10, y);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawDock(ctx, d) {
+  ctx.fillStyle = "#8a6238";
+  ctx.fillRect(d.x, d.y, d.w, d.h);
+  ctx.strokeStyle = "#5e4024";
+  ctx.lineWidth = 2;
+  for (let y = d.y; y < d.y + d.h; y += 12) {
+    ctx.beginPath();
+    ctx.moveTo(d.x, y);
+    ctx.lineTo(d.x + d.w, y);
+    ctx.stroke();
+  }
+  ctx.strokeRect(d.x, d.y, d.w, d.h);
+}
+
+function drawBobber(ctx, pos, t) {
+  const bob = Math.sin(t * 3) * 2;
+  circle(ctx, pos.add(new Vec(0, bob)), 6, "#e33");
+  circle(ctx, pos.add(new Vec(0, bob - 2)), 3, "#fff");
+}
+
+function drawTackleBox(ctx, pos) {
+  ctx.fillStyle = "#2a7a4a";
+  ctx.fillRect(pos.x - 16, pos.y - 10, 32, 20);
+  ctx.fillStyle = "#c8c8c8";
+  ctx.fillRect(pos.x - 6, pos.y - 13, 12, 4);
+}
+
+function drawFlagpole(ctx, pos, t) {
+  circle(ctx, pos, 6, "#9a9a9a");
+  const wave = Math.sin(t * 4) * 4;
+  ctx.fillStyle = "#d63c3c";
+  ctx.beginPath();
+  ctx.moveTo(pos.x, pos.y);
+  ctx.quadraticCurveTo(pos.x + 22, pos.y - 6 + wave, pos.x + 44, pos.y + wave);
+  ctx.lineTo(pos.x + 44, pos.y + 22 + wave);
+  ctx.quadraticCurveTo(pos.x + 22, pos.y + 16 + wave, pos.x, pos.y + 22);
+  ctx.fill();
+}
+
 function drawProps(ctx, props, t) {
   for (const prop of props) {
     if (prop.type === "blanket") drawBlanket(ctx, prop);
     else if (prop.type === "trail") drawTrail(ctx, prop.points);
-    else if (prop.type === "fire") drawFire(ctx, prop.pos, t);
+    else if (prop.type === "fire") drawFire(ctx, prop.pos, t, prop.lit ?? true);
+    else if (prop.type === "dock") drawDock(ctx, prop);
+    else if (prop.type === "bobber") drawBobber(ctx, prop.pos, t);
+    else if (prop.type === "tacklebox") drawTackleBox(ctx, prop.pos);
+    else if (prop.type === "flagpole") drawFlagpole(ctx, prop.pos, t);
     else if (prop.type === "tent") drawTent(ctx, prop);
     else if (prop.type === "log") drawLog(ctx, prop.pos, prop.angle);
     else if (prop.type === "woodpile") drawWoodpile(ctx, prop.pos);
@@ -275,8 +348,39 @@ function drawCanopy(ctx, b) {
   ctx.globalAlpha = 1;
 }
 
-function drawPerson(ctx, p) {
+function drawDog(ctx, p, t) {
+  const f = p.facing;
+  const side = f.perp();
+  const wag = Math.sin(t * 16) * 6;
+  ctx.strokeStyle = "#a0703c";
+  ctx.lineWidth = 4;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(p.pos.x - f.x * 16, p.pos.y - f.y * 16);
+  const tail = p.pos.sub(f.scale(28)).add(side.scale(wag));
+  ctx.lineTo(tail.x, tail.y);
+  ctx.stroke();
+  ctx.fillStyle = INK;
+  ctx.beginPath();
+  ctx.ellipse(p.pos.x, p.pos.y, 20, 12, f.angle, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#c8945a";
+  ctx.beginPath();
+  ctx.ellipse(p.pos.x, p.pos.y, 18, 10, f.angle, 0, Math.PI * 2);
+  ctx.fill();
+  circle(ctx, p.pos.add(f.scale(10)).add(side.scale(4)), 5, "#f4e6d0"); // white patch
+  const head = p.pos.add(f.scale(19));
+  circle(ctx, head, 9, "#c8945a");
+  for (const s of [1, -1]) circle(ctx, head.sub(f.scale(3)).add(side.scale(s * 8)), 4, "#7a4e24");
+  circle(ctx, head.add(f.scale(8)), 3, INK);
+}
+
+function drawPerson(ctx, p, t) {
   if (!p.catchable) return;
+  if (p.animal) {
+    drawDog(ctx, p, t);
+    return;
+  }
   const f = p.facing;
   const side = f.perp();
   circle(ctx, p.pos.add(side.scale(p.radius * 0.9)), p.radius * 0.35, SKIN);
@@ -329,6 +433,58 @@ function drawSpeech(ctx, p) {
   ctx.fillText(p.speech, x + w / 2, y + h / 2 + 1);
 }
 
+function drawFishShape(ctx, pos, angle, scale = 1) {
+  ctx.save();
+  ctx.translate(pos.x, pos.y);
+  ctx.rotate(angle);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "#e08a5a";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 14, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-11, 0);
+  ctx.lineTo(-20, -7);
+  ctx.lineTo(-20, 7);
+  ctx.fill();
+  circle(ctx, new Vec(8, -1.5), 1.6, INK);
+  ctx.restore();
+}
+
+function drawFish(ctx, fishes, t) {
+  for (const fish of fishes) {
+    if (fish.landed) {
+      drawFishShape(ctx, fish.pos, Math.sin(t * 10 + fish.age) * 0.25); // flopping
+    } else {
+      const k = fish.age / 0.45;
+      const at = fish.from.add(fish.pos.sub(fish.from).scale(k));
+      const lift = Math.sin(k * Math.PI) * 50;
+      drawFishShape(ctx, at.sub(new Vec(0, lift)), k * Math.PI * 4, 1 + Math.sin(k * Math.PI) * 0.4);
+    }
+  }
+}
+
+// Where a dog can smell Bruno from: upwind of the dog.
+function drawSmell(ctx, level) {
+  if (!level.wind) return;
+  for (const p of level.people) {
+    if (!p.smellRange || !p.calmOrCurious || p.eatTimer > 0) continue;
+    const a = level.wind.angle + Math.PI;
+    const spread = Math.acos(0.6);
+    ctx.fillStyle = "rgba(160,80,255,0.24)";
+    ctx.strokeStyle = "rgba(200,140,255,0.8)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([10, 8]);
+    ctx.beginPath();
+    ctx.moveTo(p.pos.x, p.pos.y);
+    ctx.arc(p.pos.x, p.pos.y, p.smellRange, a - spread, a + spread);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
 function drawNoise(ctx, bruno) {
   const r = bruno.noiseRadius;
   if (r <= 0) return;
@@ -346,9 +502,32 @@ function drawBruno(ctx, bruno, t) {
   const pos = bruno.pos;
   for (const s of [1, -1]) circle(ctx, pos.add(f.scale(8)).add(side.scale(s * 17)), 9, FUR_DARK);
   circle(ctx, pos, Bruno.RADIUS, FUR);
+  if (bruno.costume === "grandma") {
+    // flowery dress and shawl, grey bun, specs - very convincing
+    circle(ctx, pos.sub(f.scale(2)), Bruno.RADIUS + 3, "#b56bb5");
+    for (const [dx, dy] of [[-10, -8], [8, -12], [12, 8], [-6, 12], [-14, 4]]) {
+      circle(ctx, pos.add(new Vec(dx, dy)), 3, "#ffd6f0");
+    }
+    ctx.strokeStyle = "#7d3f8a";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, Bruno.RADIUS - 4, f.angle + 1.2, f.angle + Math.PI * 2 - 1.2);
+    ctx.stroke();
+    circle(ctx, pos.sub(f.scale(10)), 9, "#d8d8d8"); // bun
+  }
   circle(ctx, pos.add(f.scale(19)), 10, SNOUT);
   circle(ctx, pos.add(f.scale(27)), 4, INK);
   for (const s of [1, -1]) circle(ctx, pos.add(f.scale(9)).add(side.scale(s * 8)), 3, INK);
+  if (bruno.costume === "grandma") {
+    ctx.strokeStyle = "#e6c34a";
+    ctx.lineWidth = 2;
+    for (const s of [1, -1]) {
+      const eye = pos.add(f.scale(9)).add(side.scale(s * 8));
+      ctx.beginPath();
+      ctx.arc(eye.x, eye.y, 5.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
 
   if (bruno.state === BearState.LICKING) {
     const wiggle = Math.sin(t * 14) * 7;
@@ -392,12 +571,15 @@ function drawTussle(ctx, pos, t) {
 
 export function drawScene(ctx, background, level, t) {
   ctx.drawImage(background, 0, 0, WIDTH, HEIGHT);
+  drawWater(ctx, level.water, t);
   drawProps(ctx, level.props, t);
   drawTwigs(ctx, level.twigs);
+  drawSmell(ctx, level);
   drawCones(ctx, level.people, level.dark);
   for (const b of level.blockers) if (b.solid) circle(ctx, b.pos, b.solid, TRUNK);
   drawNoise(ctx, level.bruno);
-  for (const p of level.people) drawPerson(ctx, p);
+  for (const p of level.people) drawPerson(ctx, p, t);
+  drawFish(ctx, level.fish.filter((f) => f.landed), t);
   drawBruno(ctx, level.bruno, t);
   const hidingIn = level.bruno.hidingIn(level.blockers);
   for (const b of level.blockers) if (b.hideable) drawBush(ctx, b, b === hidingIn);
@@ -405,6 +587,7 @@ export function drawScene(ctx, background, level, t) {
   drawDarkness(ctx, level, t);
   if (level.bruno.state === BearState.TUSSLING) drawTussle(ctx, level.bruno.pos, t);
   drawGrowl(ctx, level.growlFx);
+  drawFish(ctx, level.fish.filter((f) => !f.landed), t);
   for (const p of level.people) {
     drawMeter(ctx, p);
     drawSpeech(ctx, p);
@@ -426,23 +609,83 @@ export function drawHud(ctx, level, touch, inset) {
   ctx.font = font(30);
   const left = 18 + inset.left;
   shadowed(`Level ${level.number}: ${level.title}`, left, 14, "left");
-  shadowed(`Caught ${level.caught}/${level.people.length}`, WIDTH - 18 - inset.right, 14, "right");
+  shadowed(`Caught ${level.caught}/${level.targets.length}`, WIDTH - 18 - inset.right, 14, "right");
 
   const bruno = level.bruno;
   let status = "Standing still";
   if (bruno.hidingIn(level.blockers)) status = "Hiding in a bush";
   else if (bruno.moving) status = STATUS[bruno.gait];
+  if (bruno.costume) status = `Disguised as Granny · ${status}`;
   ctx.font = font(22);
   shadowed(status, left, 52, "left");
+
+  if (level.wind) drawWind(ctx, level.wind);
 
   if (!touch) {
     ctx.textBaseline = "bottom";
     ctx.font = font(19);
-    const growl = level.canGrowl ? " · Right-click/G growl" : "";
     shadowed(
-      `WASD move · Shift sneak · Ctrl/double-tap W sprint · Click/Space pounce${growl} · Esc pause · R restart · M sound`,
+      "WASD move · Shift sneak · Ctrl/double-tap W sprint · Click/Space pounce · Esc pause · R restart · M sound",
       18, HEIGHT - 12, "left",
     );
+    drawHotbar(ctx, level);
+  }
+}
+
+function drawWind(ctx, wind) {
+  const c = new Vec(WIDTH / 2, 34);
+  ctx.font = font(20);
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = TEXT;
+  ctx.fillText("Wind", c.x - 34, c.y);
+  ctx.save();
+  ctx.translate(c.x, c.y);
+  ctx.rotate(wind.angle);
+  ctx.fillStyle = "#bfe3ff";
+  ctx.beginPath();
+  ctx.moveTo(24, 0);
+  ctx.lineTo(4, -12);
+  ctx.lineTo(4, -5);
+  ctx.lineTo(-22, -5);
+  ctx.lineTo(-22, 5);
+  ctx.lineTo(4, 5);
+  ctx.lineTo(4, 12);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// Minecraft-style hotbar of this level's extras, with their keys.
+function drawHotbar(ctx, level) {
+  const slots = [];
+  if (level.canGrowl) slots.push({ key: "G", label: "Growl", on: false });
+  if (level.fishMax) slots.push({ key: "Q", label: `Fish ×${level.fishLeft}`, on: false, empty: !level.fishLeft });
+  if (level.costumes.length) slots.push({ key: "C", label: "Granny", on: Boolean(level.bruno.costume) });
+  if (!slots.length) return;
+  const w = 118;
+  const h = 40;
+  let x = WIDTH / 2 - (slots.length * (w + 8) - 8) / 2;
+  const y = HEIGHT - 84;
+  for (const slot of slots) {
+    ctx.fillStyle = slot.on ? "rgba(255,220,120,0.75)" : "rgba(30,26,22,0.6)";
+    ctx.strokeStyle = "rgba(255,255,255,0.7)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 6);
+    ctx.fill();
+    ctx.stroke();
+    ctx.globalAlpha = slot.empty ? 0.4 : 1;
+    ctx.font = font(15);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = slot.on ? INK : "#ffdc78";
+    ctx.fillText(slot.key, x + 8, y + h / 2);
+    ctx.font = font(19);
+    ctx.fillStyle = slot.on ? INK : TEXT;
+    ctx.fillText(slot.label, x + 26, y + h / 2 + 1);
+    ctx.globalAlpha = 1;
+    x += w + 8;
   }
 }
 

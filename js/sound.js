@@ -13,11 +13,13 @@ const MASTER_VOLUME = 1.0;
 const GROUPS = {
   bruno_step: 4, step: 4, run: 3, rustle: 3, twig: 3,
   pounce: 2, growl: 2, eat: 3, crunch: 3, lick: 2, smack: 2, mmm: 3,
-  kid_giggle: 3, kid_laugh: 1, kid_hum: 1, kid_huh: 1, kid_gasp: 2, kid_hello: 1, kid_scream: 3,
+  kid_giggle: 3, kid_laugh: 2, kid_hum: 1, kid_huh: 2, kid_gasp: 2, kid_hello: 1, kid_scream: 3,
   man_whistle: 3, man_laugh: 1, man_hmm: 2, man_huh: 1, man_hm: 1, man_scream: 3,
   woman_huh: 3, woman_scream: 3,
+  bark: 4, sniff: 2, whine: 2, dog_eat: 1,
+  throw: 1, flop: 2, splash: 2, reel: 1, cloth: 2,
 };
-const LOOPS = ["amb_day", "amb_crickets", "amb_campfire"];
+const LOOPS = ["amb_day", "amb_crickets", "amb_campfire", "amb_lake", "amb_kids"];
 
 // Which clips each kind of voice line uses.
 const VOICES = {
@@ -34,6 +36,21 @@ const VOICES = {
     rustle: ["man_hmm"],
     calm: ["man_hm"],
     scream: ["man_scream"],
+  },
+  fisher: {
+    idle: ["reel", "man_whistle"],
+    huh: ["man_hmm", "man_huh"],
+    rustle: ["man_hmm"],
+    calm: ["man_hm"],
+    scream: ["man_scream"],
+  },
+  dog: {
+    idle: ["sniff"],
+    huh: ["sniff", "whine"],
+    rustle: ["sniff"],
+    calm: ["whine"],
+    scream: ["bark"],
+    eat: ["dog_eat", "crunch"],
   },
   woman: {
     idle: ["kid_giggle"],
@@ -189,7 +206,7 @@ export class SoundDirector {
   ambience(level) {
     const s = this.sound;
     if (!level.dark) {
-      s.setAmbience({ amb_day: 0.45 });
+      s.setAmbience(level.ambience);
       return;
     }
     // Night: crickets everywhere, and the campfire crackles louder as Bruno gets closer.
@@ -213,8 +230,13 @@ export class SoundDirector {
     const pan = panFor(bruno.pos.x);
 
     for (const ev of level.events) {
-      if (ev.type === "twig") s.play("twig", { vol: 1, pan: panFor(ev.pos.x) });
+      const at = panFor(ev.pos.x);
+      if (ev.type === "twig") s.play("twig", { vol: 1, pan: at });
       else if (ev.type === "growl") s.play("growl", { vol: 1, pan });
+      else if (ev.type === "throw") s.play("throw", { vol: 0.7, pan });
+      else if (ev.type === "flop") s.play("flop", { vol: 0.8, pan: at });
+      else if (ev.type === "splash") s.play("splash", { vol: 0.9, pan: at });
+      else if (ev.type === "costume" || ev.type === "costume-off") s.play("cloth", { vol: 0.8, pan });
     }
     level.events.length = 0;
 
@@ -245,6 +267,8 @@ export class SoundDirector {
       if (p.speechTimer > rec.speechTimer + 0.01) {
         const groups = VOICES[p.voice]?.[p.speechKind] ?? [];
         if (groups.length) s.play(choice(groups), { vol: 0.85 * vol, pan: personPan, rate: rand(0.97, 1.03) });
+        // a dog keeps barking as it runs off
+        if (p.animal && p.speechKind === "scream") s.play("bark", { vol: 0.8 * vol, pan: personPan, delay: 0.9 });
       }
       rec.speechTimer = p.speechTimer;
       if (p.catchable) {

@@ -88,6 +88,7 @@ export class Bruno {
   static LICK_TIME = 3.2; // licks, a lip smack, then "Mmm"
   static GROWL_RADIUS = 420;
   static GROWL_COOLDOWN = 3;
+  static COSTUME_SPEED = 0.7; // granny can't hurry
 
   constructor(pos) {
     this.pos = pos;
@@ -99,6 +100,11 @@ export class Bruno {
     this.cooldown = 0;
     this.growlCooldown = 0;
     this.victim = null;
+    this.costume = null; // "grandma" while disguised
+  }
+
+  get canPounce() {
+    return this.state === BearState.FREE && this.cooldown <= 0;
   }
 
   get noiseRadius() {
@@ -114,7 +120,7 @@ export class Bruno {
 
   // `aim` is an optional direction (mouse click / screen tap); otherwise pounce the way he's facing.
   pounce(aim = null) {
-    if (this.state !== BearState.FREE || this.cooldown > 0) return;
+    if (!this.canPounce) return;
     if (aim && aim.length > 0) this.facing = aim.normalize();
     this.state = BearState.POUNCING;
     this.timer = Bruno.POUNCE_TIME;
@@ -132,15 +138,19 @@ export class Bruno {
     this.growlCooldown = Math.max(0, this.growlCooldown - dt);
 
     if (this.state === BearState.FREE) {
-      this.gait = gait;
+      // In a disguise Bruno can't sprint, and walks slowly.
+      this.gait = this.costume && gait === Gait.RUN ? Gait.WALK : gait;
       this.moving = move.length > 0;
       if (this.moving) {
         this.facing = move.normalize();
-        this.pos = this.pos.add(this.facing.scale(Bruno.SPEEDS[gait] * dt));
+        const speed = Bruno.SPEEDS[this.gait] * (this.costume ? Bruno.COSTUME_SPEED : 1);
+        this.pos = this.pos.add(this.facing.scale(speed * dt));
       }
     } else if (this.state === BearState.POUNCING) {
       this.pos = this.pos.add(this.facing.scale((Bruno.POUNCE_DISTANCE / Bruno.POUNCE_TIME) * dt));
-      const victim = people.find((p) => p.catchable && this.pos.dist(p.pos) < Bruno.RADIUS + p.radius + 6);
+      const victim = people.find(
+        (p) => p.catchable && !p.animal && this.pos.dist(p.pos) < Bruno.RADIUS + p.radius + 6,
+      );
       if (victim) {
         this.startTussle(victim);
       } else {
@@ -180,10 +190,18 @@ export class Bruno {
 const SUSPICIOUS_AT = 0.35;
 const CALM_AT = 0.12;
 
-const HUH_LINES = ["Huh?", "Hello…?", "What was that?", "Is someone there?"];
-const GROWL_LINES = ["What was that noise?", "Here, puppy puppy?", "Is that a doggy?", "Hello? Who's there?"];
-const RUSTLE_LINES = ["Did that bush just move?", "Bushes don't walk…", "Weird bush."];
-const CALM_LINES = ["Must've been the wind.", "Oh well!", "Probably a squirrel."];
+// What people say. Each person can override any of these (see the dog in level.js).
+const LINES = {
+  huh: ["Huh?", "Hello…?", "What was that?", "Is someone there?"],
+  growl: ["What was that noise?", "Here, puppy puppy?", "Is that a doggy?", "Hello? Who's there?"],
+  rustle: ["Did that bush just move?", "Bushes don't walk…", "Weird bush."],
+  calm: ["Must've been the wind.", "Oh well!", "Probably a squirrel."],
+  spot: ["BEAR!!!"],
+  alert: ["AAAAH!"],
+  granny: ["Evening, ma'am!", "Hello, granny!", "Lovely dress!"], // grown-ups fooled by the disguise
+  notGranny: ["THAT'S A BEAR IN A DRESS!", "Granny?! That's a BEAR!"], // kids are not
+};
+const DOG_EAT_TIME = 6;
 
 export class Person {
   constructor(pos, route, opts = {}) {
@@ -204,7 +222,13 @@ export class Person {
     this.idleLines = opts.idleLines ?? [];
     this.shirt = opts.shirt ?? "#f078a0";
     this.hair = opts.hair ?? "#e6be5a";
-    this.voice = opts.voice ?? "man"; // kid | man | woman - picks which voice clips play
+    this.voice = opts.voice ?? "man"; // kid | man | woman | fisher | dog - picks which sound clips play
+    this.lines = { ...LINES, ...opts.lines };
+    this.animal = this.voice === "dog"; // can't be caught and doesn't count, but raises the alarm
+    this.isKid = this.voice === "kid"; // kids see through disguises
+    this.smellRange = opts.smellRange ?? 0; // dogs smell Bruno from downwind of him
+    this.eatTimer = 0;
+    this.greeted = false;
 
     this.angle = 0;
     this.state = PersonState.WANDER;
@@ -237,7 +261,7 @@ export class Person {
     this.speechTimer = duration;
   }
 
-  spot(line = "BEAR!!!") {
+  spot(line = choice(this.lines.spot)) {
     this.suspicion = 1;
     this.state = PersonState.FLEE;
     this.lureTarget = null;
@@ -280,18 +304,39 @@ export class Person {
       return false;
     }
 
+    if (this.animal && this.chaseFish(dt, env)) return false;
+
     let noticed = false;
     const dist = this.pos.dist(bruno.pos);
     const sight = this.canSee(bruno, blockers, env);
-    if (sight === "clear") {
+    // Grown-ups see a sweet old granny; kids and dogs see a bear in a dress.
+    const fooled = sight === "clear" && bruno.costume === "grandma" && !this.isKid && !this.animal && bruno.state === BearState.FREE;
+    if (fooled) {
+      if (!this.greeted && dist < 220) {
+        this.greeted = true;
+        this.say(choice(this.lines.granny), "calm");
+      }
+      this.suspicion -= dt * 0.3;
+    } else if (sight === "clear") {
       if (bruno.state === BearState.TUSSLING || bruno.state === BearState.LICKING) this.suspicion = 1;
       const closeness = 1 - Math.min(dist / this.sightRange(env), 1);
-      this.suspicion += dt * (0.5 + 2.0 * closeness);
+      const rate = bruno.costume && this.isKid ? 1.6 : 1; // a bear in a dress is extra alarming
+      this.suspicion += dt * (0.5 + 2.0 * closeness) * rate;
+      if (bruno.costume && this.isKid && this.speechTimer <= 0) this.say(choice(this.lines.notGranny), "huh");
       noticed = true;
     } else if (sight === "rustle") {
       this.suspicion += dt * 0.3;
       noticed = true;
-      if (this.speechTimer <= 0 && this.suspicion > 0.2) this.say(choice(RUSTLE_LINES), "rustle");
+      if (this.speechTimer <= 0 && this.suspicion > 0.2) this.say(choice(this.lines.rustle), "rustle");
+    }
+
+    // Dogs smell Bruno when the wind blows from him to them - bushes and disguises don't help.
+    if (this.smellRange && env.wind && dist < this.smellRange && dist > 1) {
+      const downwind = this.pos.sub(bruno.pos).normalize().dot(env.wind);
+      if (downwind > 0.6) {
+        this.suspicion += dt * (0.4 + 1.4 * (1 - dist / this.smellRange));
+        noticed = true;
+      }
     }
 
     // One-off noises, like a twig snapping under Bruno's paw.
@@ -301,6 +346,7 @@ export class Person {
         // Any snap they can hear makes them stop and look; a close one is worse.
         this.suspicion = Math.max(this.suspicion + noise.strength * (1 - d / noise.radius), SUSPICIOUS_AT + 0.05);
         this.interest = noise.pos;
+        if (noise.line) this.say(noise.line, "huh");
         noticed = true;
       }
     }
@@ -311,12 +357,12 @@ export class Person {
       this.interest = env.lure;
       this.suspicion = Math.max(this.suspicion, SUSPICIOUS_AT + 0.1);
       this.state = PersonState.INVESTIGATE;
-      this.say(choice(GROWL_LINES), "huh");
+      this.say(choice(this.lines.growl), "huh");
       noticed = true;
     }
 
     const hearingRange = bruno.noiseRadius * this.hearing;
-    if (dist < hearingRange) {
+    if (!fooled && dist < hearingRange) {
       this.suspicion += dt * 0.6 * (1 - dist / hearingRange);
       if (bruno.state === BearState.POUNCING) this.suspicion += dt * 3;
       noticed = true;
@@ -332,15 +378,15 @@ export class Person {
     this.suspicion = clamp(this.suspicion, 0, 1);
 
     if (this.suspicion >= 1) {
-      this.spot();
+      this.spot(bruno.costume && this.isKid ? choice(this.lines.notGranny) : undefined);
       return true;
     }
     if (this.state === PersonState.WANDER && this.suspicion >= SUSPICIOUS_AT) {
       this.state = PersonState.INVESTIGATE;
-      if (this.speechTimer <= 0) this.say(choice(HUH_LINES), "huh");
+      if (this.speechTimer <= 0) this.say(choice(this.lines.huh), "huh");
     } else if (this.state === PersonState.INVESTIGATE && this.suspicion < CALM_AT) {
       this.state = PersonState.WANDER;
-      this.say(choice(CALM_LINES), "calm");
+      this.say(choice(this.lines.calm), "calm");
     }
 
     if (this.state === PersonState.INVESTIGATE) {
@@ -360,6 +406,28 @@ export class Person {
     }
     this.pos = pushOut(this.pos, this.radius, blockers, bounds);
     return false;
+  }
+
+  // Dogs drop everything for a fish. Returns true while the dog is busy with one.
+  chaseFish(dt, env) {
+    if (this.eatTimer > 0) {
+      this.eatTimer -= dt;
+      this.suspicion = Math.max(0, this.suspicion - dt * 0.3);
+      return true;
+    }
+    const fish = env.fish.find((f) => f.landed && !f.eaten && this.pos.dist(f.pos) < 520);
+    if (!fish) return false;
+    const to = fish.pos.sub(this.pos);
+    if (to.length < 16) {
+      fish.eaten = true;
+      this.eatTimer = DOG_EAT_TIME;
+      this.state = PersonState.WANDER;
+      this.say("*munch munch*", "eat", 3);
+      return true;
+    }
+    this.turnToward(to.angle, dt);
+    this.pos = this.pos.add(to.normalize().scale(Math.min(this.fleeSpeed * 0.55 * dt, to.length)));
+    return true;
   }
 
   wander(dt) {

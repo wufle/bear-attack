@@ -88,6 +88,16 @@ body.touch #touch-ui {
   right: calc(env(safe-area-inset-right) + 140px);
   bottom: calc(env(safe-area-inset-bottom) + 112px);
 }
+#btn-fish {
+  right: calc(env(safe-area-inset-right) + 236px);
+  bottom: calc(env(safe-area-inset-bottom) + 30px);
+  font-size: 13px;
+}
+#btn-costume {
+  right: calc(env(safe-area-inset-right) + 236px);
+  bottom: calc(env(safe-area-inset-bottom) + 118px);
+  font-size: 12px;
+}
 #btn-prev,
 #btn-next {
   bottom: calc(env(safe-area-inset-bottom) + 24px);
@@ -155,4 +165,20 @@ body.touch #touch-ui {
   #rotate {
     display: flex;
   }
+}
+
+/* Short phone screens (landscape): smaller, tighter buttons so they hide less of the game. */
+@media (max-height: 500px) {
+  .btn { width: 54px; height: 54px; font-size: 12px; }
+  .btn.big { width: 84px; height: 84px; font-size: 16px; }
+  .btn.small { width: 42px; height: 42px; font-size: 16px; }
+  #btn-mute { top: calc(env(safe-area-inset-top) + 60px); }
+  #btn-pounce { right: calc(env(safe-area-inset-right) + 18px); bottom: calc(env(safe-area-inset-bottom) + 18px); }
+  #btn-sneak { right: calc(env(safe-area-inset-right) + 112px); bottom: calc(env(safe-area-inset-bottom) + 12px); }
+  #btn-sprint { right: calc(env(safe-area-inset-right) + 32px); bottom: calc(env(safe-area-inset-bottom) + 112px); }
+  #btn-growl { right: calc(env(safe-area-inset-right) + 104px); bottom: calc(env(safe-area-inset-bottom) + 80px); }
+  #btn-fish { right: calc(env(safe-area-inset-right) + 176px); bottom: calc(env(safe-area-inset-bottom) + 12px); font-size: 11px; }
+  #btn-costume { right: calc(env(safe-area-inset-right) + 168px); bottom: calc(env(safe-area-inset-bottom) + 80px); font-size: 10px; }
+  #stick { width: 104px; height: 104px; }
+  #knob { left: 29px; top: 29px; width: 46px; height: 46px; }
 }

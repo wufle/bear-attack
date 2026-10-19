@@ -6,6 +6,8 @@
 //   Ctrl (hold) or double-tap a move key   sprint (stops when you stop moving)
 //   Left click      pounce toward the cursor (Space also pounces, like a jump)
 //   Right click / G growl (levels that have it)
+//   Q               throw a fish (like dropping an item)
+//   C               put the disguise on / take it off
 //   1-9             pick a level you've reached (on the level card)
 //   Esc             pause
 //   M               sound on/off
@@ -13,7 +15,7 @@
 // Touch (like Minecraft Bedrock):
 //   Left side of the screen    joystick
 //   Tap anywhere on the right  pounce toward that spot
-//   Buttons                    Pounce, Sneak (toggle), Sprint (toggle), Growl
+//   Buttons                    Pounce, Sneak (toggle), Sprint (toggle), Growl, Fish, Disguise
 
 import { Gait, Vec } from "./actors.js";
 
@@ -24,7 +26,7 @@ const MOVE_KEYS = {
   KeyD: [1, 0], ArrowRight: [1, 0],
 };
 const DOUBLE_TAP_MS = 300;
-const STICK_RADIUS = 60; // CSS pixels
+// The joystick's radius comes from its CSS size (smaller on short phone screens).
 const STICK_DEADZONE = 0.2;
 
 export class Input {
@@ -55,6 +57,8 @@ export class Input {
     this.bindButton("btn-fullscreen", () => this.events.push({ type: "fullscreen" }));
     this.bindButton("btn-mute", () => this.events.push({ type: "mute" }));
     this.bindButton("btn-growl", () => this.events.push({ type: "growl" }));
+    this.bindButton("btn-fish", () => this.events.push({ type: "fish" }));
+    this.bindButton("btn-costume", () => this.events.push({ type: "costume" }));
     this.bindButton("btn-prev", () => this.events.push({ type: "step-level", by: -1 }));
     this.bindButton("btn-next", () => this.events.push({ type: "step-level", by: 1 }));
     this.bindButton("btn-sneak", () => {
@@ -96,6 +100,10 @@ export class Input {
       this.events.push({ type: "pause" });
     } else if (e.code === "KeyG") {
       this.events.push({ type: "growl" });
+    } else if (e.code === "KeyQ") {
+      this.events.push({ type: "fish" }); // Q drops an item in Minecraft
+    } else if (e.code === "KeyC") {
+      this.events.push({ type: "costume" });
     } else if (/^Digit[1-9]$/.test(e.code)) {
       this.events.push({ type: "pick", index: Number(e.code.slice(5)) - 1 });
     } else if (e.code === "KeyM") {
@@ -118,8 +126,8 @@ export class Input {
       this.stick = { id: e.pointerId, origin: new Vec(e.clientX, e.clientY), vec: new Vec() };
       canvas.setPointerCapture(e.pointerId);
       this.stickEl.classList.add("active");
-      this.stickEl.style.left = `${e.clientX - STICK_RADIUS}px`;
-      this.stickEl.style.top = `${e.clientY - STICK_RADIUS}px`;
+      this.stickEl.style.left = `${e.clientX - this.stickRadius}px`;
+      this.stickEl.style.top = `${e.clientY - this.stickRadius}px`;
       this.moveKnob(new Vec());
     } else {
       this.events.push({ type: "pounce", at: this.toWorld(e.clientX, e.clientY) });
@@ -129,9 +137,9 @@ export class Input {
   onPointerMove(e) {
     if (e.pointerId !== this.stick.id) return;
     const delta = new Vec(e.clientX, e.clientY).sub(this.stick.origin);
-    const amount = Math.min(delta.length, STICK_RADIUS) / STICK_RADIUS;
+    const amount = Math.min(delta.length, this.stickRadius) / this.stickRadius;
     this.stick.vec = amount < STICK_DEADZONE ? new Vec() : delta.normalize().scale(amount);
-    this.moveKnob(delta.normalize().scale(amount * STICK_RADIUS));
+    this.moveKnob(delta.normalize().scale(amount * this.stickRadius));
   }
 
   onPointerUp(e) {
@@ -141,6 +149,10 @@ export class Input {
     this.stickEl.style.left = "";
     this.stickEl.style.top = "";
     this.moveKnob(new Vec());
+  }
+
+  get stickRadius() {
+    return this.stickEl.offsetWidth / 2 || 60;
   }
 
   moveKnob(offset) {

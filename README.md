@@ -13,8 +13,12 @@ for the full game plan.
    unless you sneak over them.
 3. **Campfire Night:** two campers by the fire. Stay in the dark, and growl to
    lure one over.
+4. **Gone Fishin':** a fisherman on a dock and his dog. The dog smells you from
+   downwind, so watch the wind, or throw him a fish.
+5. **Scout Troop:** five scouts and their leader. Put on the Grandma disguise to
+   fool grown-ups (kids aren't fooled).
 
-Your progress is saved in the browser. On the level card, press 1-3 or use ◀ ▶ to
+Your progress is saved in the browser. On the level card, press 1-5 or use ◀ ▶ to
 replay any level you've reached.
 
 Sounds are real recordings from [Freesound](https://freesound.org), all CC0
@@ -34,6 +38,8 @@ Modelled on Minecraft.
 | Sprint (loud) | Hold Ctrl, or double-tap W | Sprint button (stops when you stop) |
 | Pounce | Left click (toward cursor) or Space | Pounce button, or tap the right side (toward the tap) |
 | Growl (level 3+) | Right click or G | Growl button |
+| Throw a fish (level 4+) | Q (like dropping an item) | Fish button |
+| Grandma disguise (level 5) | C | Disguise button |
 | Pause | Esc | ❚❚ button |
 | Restart level | R | |
 | Sound on/off | M | 🔊 button |

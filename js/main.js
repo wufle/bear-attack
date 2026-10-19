@@ -32,6 +32,8 @@ const backgrounds = {};
 const backgroundFor = (lvl) => (backgrounds[lvl.ground] ??= makeBackground(lvl.ground));
 const buttons = {
   growl: document.getElementById("btn-growl"),
+  fish: document.getElementById("btn-fish"),
+  costume: document.getElementById("btn-costume"),
   prev: document.getElementById("btn-prev"),
   next: document.getElementById("btn-next"),
   sneak: document.getElementById("btn-sneak"),
@@ -115,8 +117,10 @@ function handleEvents() {
       const index = ev.type === "pick" ? ev.index : levelIndex + ev.by;
       if (index >= 0 && index <= unlocked) goToLevel(index);
     } else if (mode === "playing") {
-      if (ev.type === "pounce") level.bruno.pounce(ev.at ? ev.at.sub(level.bruno.pos) : null);
+      if (ev.type === "pounce") level.pounce(ev.at ? ev.at.sub(level.bruno.pos) : null);
       else if (ev.type === "growl") level.growl();
+      else if (ev.type === "fish") level.throwFish();
+      else if (ev.type === "costume") level.toggleCostume();
       else if (ev.type === "pause") setMode("paused");
     } else if (modeTime < CARD_INPUT_DELAY) {
       continue;
@@ -189,6 +193,10 @@ function frame(now) {
   }
   director.ambience(level);
   buttons.growl.hidden = !level.canGrowl;
+  buttons.fish.hidden = !level.fishMax;
+  buttons.fish.textContent = `Fish ×${level.fishLeft}`;
+  buttons.costume.hidden = !level.costumes.length;
+  buttons.costume.classList.toggle("on", Boolean(level.bruno.costume));
   buttons.prev.hidden = mode !== "intro" || levelIndex === 0;
   buttons.next.hidden = mode !== "intro" || levelIndex >= unlocked;
   buttons.sneak.classList.toggle("on", input.sneakToggle);
